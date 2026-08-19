@@ -1,0 +1,44 @@
+{
+  "name": "elenchos",
+  "version": "0.1.0",
+  "description": "Independent verification infrastructure for AI coding agents",
+  "type": "module",
+  "bin": {
+    "elenchos": "src/cli.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/check-syntax.mjs",
+    "test": "node --test --experimental-test-coverage",
+    "demo": "node demo/target-app.mjs",
+    "elenchos": "node src/cli.mjs",
+    "proof": "node src/cli.mjs run demo/tasks/add-task.json"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "src",
+    "demo/target-app.mjs",
+    "demo/tasks",
+    "demo/tests/*_test.md",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE",
+    "config.example.json"
+  ],
+  "keywords": [
+    "ai-agents",
+    "verification",
+    "browser-testing",
+    "kane-cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CryptoZephyr/elenchos.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CryptoZephyr/elenchos/issues"
+  },
+  "homepage": "https://github.com/CryptoZephyr/elenchos#readme",
+  "license": "MIT"
+}

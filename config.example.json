@@ -1,0 +1,31 @@
+{
+  "repository": ".",
+  "agent": {
+    "provider": "gemini",
+    "command": "agy",
+    "args": [
+      "--agent",
+      "gemini",
+      "--print",
+      "{{prompt}}",
+      "--output-format",
+      "json",
+      "--mode",
+      "accept-edits",
+      "--print-timeout",
+      "300s"
+    ],
+    "timeoutMs": 330000
+  },
+  "application": {
+    "start": "npm run dev",
+    "url": "http://127.0.0.1:3000",
+    "readinessTimeoutMs": 60000,
+    "env": {}
+  },
+  "verification": {
+    "maxRepairAttempts": 2,
+    "timeoutSeconds": 120,
+    "headless": true
+  }
+}

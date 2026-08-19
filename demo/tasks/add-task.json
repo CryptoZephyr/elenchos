@@ -1,0 +1,22 @@
+{
+  "id": "proofboard-add-task",
+  "title": "Add a task to Proofboard",
+  "description": "A user can add a task from the main Proofboard screen.",
+  "acceptanceCriteria": [
+    {
+      "id": "AC-001",
+      "description": "The Proofboard page is visible"
+    },
+    {
+      "id": "AC-002",
+      "description": "Adding Ship the invoice export makes Ship the invoice export visible in the task list"
+    },
+    {
+      "id": "AC-003",
+      "description": "The task count shows 1 task after adding the task"
+    }
+  ],
+  "verification": {
+    "testFile": "demo/tests/add-task_test.md"
+  }
+}
