@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { commandExists, runCommand } from "./process.mjs";
 import { replacePrompt, trimForLog } from "./utils.mjs";
 
@@ -93,11 +95,16 @@ export function buildRepairPrompt(task, failure, cwd, attempt) {
 export async function runAgent({ config, prompt, cwd }) {
   if (!config?.command) throw new Error("No coding-agent command configured");
   const { command, args } = renderAgentCommand(config, prompt);
+  const env = { ...(config.env ?? {}) };
+  const gitTools = join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin");
+  if (process.platform === "win32" && command.toLowerCase() === "agy" && existsSync(join(gitTools, "grep.exe"))) {
+    env.PATH = `${gitTools}${delimiter}${env.PATH ?? process.env.PATH ?? ""}`;
+  }
   const result = await runCommand({
     command,
     args,
     cwd,
-    env: config.env ?? {},
+    env,
     timeoutMs: config.timeoutMs ?? 300000,
   });
   if (result.error) throw new Error(`Agent process could not start: ${result.error.message}`);
