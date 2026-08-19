@@ -45,7 +45,7 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
     };
     persistence.save(run);
 
-    if (mode === "run") {
+    if (mode === "run" && config.verification?.verifyBeforeImplement !== true) {
       saveTransition(run, persistence, "IMPLEMENTING", "Send task to coding agent");
       const implementation = await runAgent({
         config: config.agent,

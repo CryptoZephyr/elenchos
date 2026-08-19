@@ -41,7 +41,7 @@ npx elenchos init
 npx elenchos run demo/tasks/add-task.json
 ```
 
-The demo starts with a deterministic browser-visible defect. The coding agent receives the task in a detached worktree. Kane runs [the fixed verification contract](demo/tests/add-task_test.md), returns structured failure evidence, and reruns the same contract after repair.
+The demo starts with a deterministic browser-visible defect and enables `verifyBeforeImplement`. Kane runs [the fixed verification contract](demo/tests/add-task_test.md) against that baseline, returns structured failure evidence to the coding agent, and reruns the same contract after repair in a detached worktree.
 
 Use `verify` when the implementation already exists and no code changes are needed:
 

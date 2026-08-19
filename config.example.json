@@ -25,6 +25,7 @@
   },
   "verification": {
     "maxRepairAttempts": 2,
+    "verifyBeforeImplement": false,
     "timeoutSeconds": 120,
     "headless": true
   }
