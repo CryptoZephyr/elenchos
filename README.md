@@ -77,6 +77,8 @@ Every run is stored under `.elenchos/runs/<run-id>`. Each attempt has separate a
 
 Local run data may still contain project details, so `.elenchos`, `.testmuai`, and Kane output folders are excluded from Git and npm packages.
 
+The sanitized [closed-loop evidence](EVIDENCE.md) records the verified demo run without publishing Kane session data.
+
 ## Configuration
 
 `elenchos init` writes `.elenchos/config.json` and checks whether Kane is installed and authenticated. [config.example.json](config.example.json) documents the supported fields without credentials or machine session data.

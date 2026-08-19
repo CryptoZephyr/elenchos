@@ -23,6 +23,7 @@
     "demo/tests/*_test.md",
     "README.md",
     "SECURITY.md",
+    "EVIDENCE.md",
     "LICENSE",
     "config.example.json"
   ],
