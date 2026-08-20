@@ -10,7 +10,7 @@ The run is accepted only when the fixed task contract and Kane test are unchange
 - [Security policy](SECURITY.md)
 - [Recorded closed-loop evidence](EVIDENCE.md)
 
-The current published version is 0.1.2. The repository also contains the next MCP onboarding improvements, which are not in the published package yet. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
+The current published version is 0.1.3. It includes the local stdio MCP server and the doctor command described below. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
 
 ## Why it exists
 
@@ -80,7 +80,7 @@ Install the published CLI:
     npm install -g elenchos
     elenchos --help
 
-The published package is currently 0.1.2. To use the current MCP and doctor source before the next npm release, work from a repository checkout:
+The published package is currently 0.1.3 and includes the MCP and doctor commands:
 
     npm install
     npm run doctor -- --repo .
@@ -127,7 +127,7 @@ After the basic MCP setup, run these commands when you want the agent and Kane l
     elenchos run path/to/task.json
     elenchos status <run-id>
 
-Use npx elenchos in place of elenchos after the next npm release includes the MCP and doctor commands.
+Use npx elenchos in place of elenchos when the CLI is not installed globally.
 
 ### 1. Initialize the repository
 
