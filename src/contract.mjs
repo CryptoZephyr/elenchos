@@ -11,6 +11,8 @@ function taskPayload(task) {
     id: task.id,
     title: task.title,
     description: task.description,
+    setup: task.setup ?? null,
+    preconditions: task.preconditions ?? null,
     acceptanceCriteria: task.acceptanceCriteria,
     verification: task.verification,
   };

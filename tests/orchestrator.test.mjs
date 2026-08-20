@@ -125,3 +125,37 @@ test("records application startup failure as an error without invoking Kane", as
     rmSync(fixture.root, { recursive: true, force: true });
   }
 });
+
+test("propagates cancellation from application startup and records a cancelled run", async () => {
+  const fixture = repository();
+  const controller = new AbortController();
+  let receivedSignal;
+  let kaneCalled = false;
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config({ maxRepairAttempts: 0 }),
+      cwd: fixture.root,
+      mode: "verify",
+      signal: controller.signal,
+      services: {
+        startApplication: async ({ signal }) => {
+          receivedSignal = signal;
+          controller.abort();
+          return application();
+        },
+        runKaneTest: async () => {
+          kaneCalled = true;
+          return verification("PASS");
+        },
+      },
+    });
+    assert.equal(receivedSignal, controller.signal);
+    assert.equal(kaneCalled, false);
+    assert.equal(result.run.status, "ERROR");
+    assert.equal(result.run.cancelled, true);
+    assert.match(result.run.error, /Run cancelled/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});

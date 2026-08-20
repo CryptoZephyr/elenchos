@@ -69,7 +69,7 @@ export function spawnManaged({ command, args = [], cwd, env, stdoutPath, stderrP
   return { child, stdoutStream, stderrStream };
 }
 
-export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, input }) {
+export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, input, signal }) {
   return new Promise((resolve) => {
     const normalized = normalizeWindowsCommand(command, args);
     const child = spawn(normalized.command, normalized.args, {
@@ -83,15 +83,24 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
     let timer;
     let forceTimer;
+
+    const abort = () => {
+      if (settled) return;
+      cancelled = true;
+      terminateProcessTree(child);
+      forceTimer = setTimeout(() => finish({ exitCode: null, signal: "CANCELLED" }), 2500);
+    };
 
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(forceTimer);
-      resolve({ ...result, stdout, stderr, timedOut });
+      signal?.removeEventListener("abort", abort);
+      resolve({ ...result, stdout, stderr, timedOut, cancelled });
     };
 
     child.stdout.setEncoding("utf8");
@@ -106,6 +115,11 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
       terminateProcessTree(child);
       forceTimer = setTimeout(() => finish({ exitCode: null, signal: "TIMEOUT" }), 2500);
     }, timeoutMs);
+
+    if (signal) {
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }
 
     if (input) child.stdin.write(input);
     child.stdin.end();

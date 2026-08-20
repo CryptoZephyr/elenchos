@@ -56,6 +56,8 @@ export function normalizeTask(raw, source = "unknown") {
     id,
     title,
     description,
+    setup: raw.setup ?? null,
+    preconditions: raw.preconditions ?? null,
     acceptanceCriteria,
     verification: raw.verification && typeof raw.verification === "object" ? raw.verification : {},
     source,

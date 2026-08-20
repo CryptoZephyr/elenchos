@@ -205,3 +205,43 @@ test("requires a complete testmd flow when parsing testmd execution", () => {
   });
   assert.equal(result.status, "VERIFIER_ERROR");
 });
+
+test("summarizes Kane progress, mapped observations, and the evidence pack hint", () => {
+  const result = parseKaneResult({
+    stdout: [
+      JSON.stringify({ step: 1, status: "passed", remark: "Opened the app" }),
+      JSON.stringify({ step: 2, status: "passed", remark: "Added the task" }),
+      JSON.stringify({ type: "test_md_step_start", step_index: 2, heading: "AC-001 Add the task" }),
+      JSON.stringify({ type: "test_md_step_end", step_index: 2, status: "passed", remark: "The task is visible", id: "step-2" }),
+      JSON.stringify({ type: "run_end", status: "passed", final_url: "http://127.0.0.1:3000/", screenshot_path: "C:/private/step.png" }),
+      JSON.stringify({ type: "test_md_done", status: "passed" }),
+    ].join("\n"),
+    stderr: "evidence: view locally with `kane-cli evidence serve C:/private/run.evidence`",
+    exitCode: 0,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The task appears" }],
+  });
+  assert.equal(result.status, "PASS");
+  assert.equal(result.stepsTaken, 2);
+  assert.deepEqual(result.actions, ["Opened the app", "Added the task"]);
+  assert.equal(result.evidence.available, true);
+  assert.equal(result.finalUrl, "http://127.0.0.1:3000/");
+  assert.equal(result.screenshotPath, "C:/private/step.png");
+  assert.equal(result.criteria[0].status, "PASS");
+  assert.equal(result.criteria[0].observed, "The task is visible");
+  assert.equal(result.criteria[0].evidence.eventId, "step-2");
+  assert.equal(result.criteria[0].evidence.screenshot, "C:/private/step.png");
+});
+
+test("classifies a cancelled Kane process as a verifier error", () => {
+  const result = parseKaneResult({
+    stdout: JSON.stringify({ type: "run_end", status: "passed" }),
+    stderr: "",
+    exitCode: null,
+    cancelled: true,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The page loads" }],
+  });
+  assert.equal(result.status, "VERIFIER_ERROR");
+  assert.equal(result.cancelled, true);
+});

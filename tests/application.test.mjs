@@ -72,3 +72,17 @@ test("terminates a command after its timeout", async () => {
   });
   assert.equal(result.timedOut, true);
 });
+
+test("cancels a running command through AbortSignal", async () => {
+  const controller = new AbortController();
+  const resultPromise = runCommand({
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1000)"],
+    timeoutMs: 5000,
+    signal: controller.signal,
+  });
+  setTimeout(() => controller.abort(), 50);
+  const result = await resultPromise;
+  assert.equal(result.cancelled, true);
+  assert.equal(result.timedOut, false);
+});

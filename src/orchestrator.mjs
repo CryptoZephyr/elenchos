@@ -22,7 +22,7 @@ function testPathFor(task, config, root) {
   return resolve(root, configured);
 }
 
-export async function executeRun({ task, config, cwd, mode = "run", services = {} }) {
+export async function executeRun({ task, config, cwd, mode = "run", services = {}, signal }) {
   const agentRunner = services.runAgent ?? runAgent;
   const applicationStarter = services.startApplication ?? startApplication;
   const kaneRunner = services.runKaneTest ?? runKaneTest;
@@ -39,7 +39,11 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
 
   let application = null;
   let workspace = null;
+  const throwIfCancelled = () => {
+    if (signal?.aborted) throw new Error("Run cancelled");
+  };
   try {
+    throwIfCancelled();
     workspace = prepareWorkspace({ cwd, runId: run.id, mode });
     const executionCwd = workspace.cwd;
     run.repository = {
@@ -50,12 +54,15 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     persistence.save(run);
 
     if (mode === "run" && config.verification?.verifyBeforeImplement !== true) {
+      throwIfCancelled();
       saveTransition(run, persistence, "IMPLEMENTING", "Send task to coding agent");
       const implementation = await agentRunner({
         config: config.agent,
         prompt: buildImplementationPrompt(task, executionCwd),
         cwd: executionCwd,
+        signal,
       });
+      throwIfCancelled();
       run.implementation = { at: nowIso(), ...implementation };
       assertVerificationContract(contract, task);
       run.implementationRef = captureRepositoryState(executionCwd);
@@ -68,6 +75,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     }
     let repairAttempt = 0;
     while (true) {
+      throwIfCancelled();
       const attemptNumber = run.attempts.length + 1;
       const attemptDirectory = join(persistence.directory, "attempts", String(attemptNumber).padStart(2, "0"));
       mkdirSync(attemptDirectory, { recursive: true });
@@ -78,7 +86,9 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
         config: config.application ?? {},
         cwd: executionCwd,
         logDirectory: attemptDirectory,
+        signal,
       });
+      throwIfCancelled();
       saveTransition(run, persistence, "VERIFYING", `Run Kane contract ${testFile}`);
       const verification = await kaneRunner({
         testFile,
@@ -86,7 +96,9 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
         criteria: task.acceptanceCriteria,
         config: config.verification ?? {},
         evidenceDirectory: attemptDirectory,
+        signal,
       });
+      throwIfCancelled();
       assertVerificationContract(contract, task);
       const verifiedRef = captureRepositoryState(executionCwd);
       if (!sameRepositoryState(verificationRef, verifiedRef)) {
@@ -104,6 +116,12 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
       await application.stop();
       application = null;
 
+      if (verification.cancelled) {
+        run.cancelled = true;
+        run.error = "Kane verification cancelled";
+        saveTransition(run, persistence, "ERROR", run.error);
+        break;
+      }
       if (verification.status === "PASS") {
         run.verifiedRevision = verifiedRef;
         saveTransition(run, persistence, "VERIFIED", "Kane passed the verification contract");
@@ -126,7 +144,9 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
         config: config.agent,
         prompt: buildRepairPrompt(task, verification, executionCwd, repairAttempt),
         cwd: executionCwd,
+        signal,
       });
+      throwIfCancelled();
       assertVerificationContract(contract, task);
       const afterRepair = captureRepositoryState(executionCwd);
       if (afterRepair.diffHash === beforeRepair.diffHash) {
@@ -138,6 +158,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     }
   } catch (error) {
     if (application) await application.stop().catch(() => {});
+    if (signal?.aborted) run.cancelled = true;
     run.error = error instanceof Error ? error.message : String(error);
     if (!["VERIFIED", "FAILED", "ERROR"].includes(run.status)) saveTransition(run, persistence, "ERROR", run.error);
     else persistence.save(run);

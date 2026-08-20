@@ -36,12 +36,14 @@ export async function checkKaneReadiness(config = {}) {
   const result = await runCommand({
     command: invocation.command,
     args: [...invocation.prefixArgs, "whoami"],
+    env: { KANE_CLI_USER_AGENT: "elenchos" },
     timeoutMs: 30000,
   });
   const balance = result.exitCode === 0 && !result.timedOut
     ? await runCommand({
       command: invocation.command,
       args: [...invocation.prefixArgs, "balance"],
+      env: { KANE_CLI_USER_AGENT: "elenchos" },
       timeoutMs: 30000,
     })
     : null;
@@ -65,7 +67,7 @@ export function parseJsonLines(text) {
 }
 
 function readResultMarkdown(path) {
-  if (!existsSync(path)) return null;
+  if (!path || !existsSync(path)) return null;
   const text = readFileSync(path, "utf8");
   const frontmatter = text.match(/^---\s*([\s\S]*?)\s*---/);
   const statusLine = frontmatter?.[1]?.match(/^status\s*:\s*([^\s#]+)/mi)?.[1];
@@ -80,7 +82,8 @@ function readResultMarkdown(path) {
   return { status, sessionId, started, steps, markdown: trimForLog(text, 24000) };
 }
 
-function statusFromEvents(events, { exitCode, timedOut, requireTestMd = false } = {}) {
+function statusFromEvents(events, { exitCode, timedOut, cancelled = false, requireTestMd = false } = {}) {
+  if (cancelled) return "VERIFIER_ERROR";
   if (events.length === 0) return "VERIFIER_ERROR";
   const bugVerdict = bugVerdictFromEvents(events);
   const hasConfirmedProductVerdict = isConfirmedProductVerdict(bugVerdict);
@@ -141,15 +144,51 @@ function isConfirmedProductVerdict(verdict) {
   return Boolean(verdict) && verdict.confirmed === true && !isVerifierFailure(verdict);
 }
 
-function mapCriteria(criteria, overall, steps = [], events = []) {
+function eventText(event) {
+  return [event?.remark, event?.summary, event?.message, event?.heading, event?.title, event?.name, event?.description]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim())
+    .join(" ");
+}
+
+function meaningfulEvents(events) {
+  return events
+    .map((event) => ({
+      step: event.step ?? event.step_index ?? event.stepIndex ?? event.index ?? null,
+      status: normalizeVerificationStatus(event.status),
+      text: eventText(event),
+      type: event.type ?? null,
+    }))
+    .filter((event) => event.text || event.status !== "INCONCLUSIVE");
+}
+
+function summarizeExecution(events) {
+  const progress = events.filter((event) => !event.type && Number.isInteger(event.step));
+  const testSteps = events.filter((event) => event.type === "test_md_step_end");
+  const completedSteps = progress.length > 0 ? progress : testSteps;
+  const failures = meaningfulEvents(events.filter((event) => {
+    return event.type === "error" || normalizeVerificationStatus(event.status) === "FAIL";
+  }));
+  const actions = meaningfulEvents(completedSteps.filter((event) => normalizeVerificationStatus(event.status) === "PASS"))
+    .map((event) => event.text)
+    .filter(Boolean)
+    .filter((text, index, values) => values.indexOf(text) === index)
+    .slice(-4);
+  return {
+    stepsTaken: completedSteps.length,
+    actions,
+    failures,
+  };
+}
+
+function evidenceHint(stderr) {
+  const match = String(stderr ?? "").match(/evidence:\s*view locally with `kane-cli evidence serve ([^`]+)`/i);
+  return match ? { available: true, packPath: match[1] } : { available: false, packPath: null };
+}
+
+function mapCriteria(criteria, overall, steps = [], events = [], terminal = null) {
   const starts = events.filter((event) => event.type === "test_md_step_start");
   const ends = events.filter((event) => event.type === "test_md_step_end");
-
-  function eventText(event) {
-    return [event?.heading, event?.title, event?.name, event?.description]
-      .filter((value) => typeof value === "string")
-      .join(" ");
-  }
 
   return criteria.map((criterion) => {
     const markdownStep = steps.find((item) => item.description.includes(criterion.id));
@@ -166,15 +205,24 @@ function mapCriteria(criteria, overall, steps = [], events = []) {
       else if (normalized === "FAIL" && overall !== "VERIFIER_ERROR") status = "FAIL";
     } else if (markdownStep?.marker === "✓") status = "PASS";
     else if (markdownStep?.marker === "✗" && overall !== "VERIFIER_ERROR") status = "FAIL";
-    return { ...criterion, status };
+    return {
+      ...criterion,
+      status,
+      observed: rootStep ? eventText(rootStep) || null : markdownStep?.description ?? null,
+      evidence: rootStep ? {
+        step: rootStep.step_index ?? rootStep.stepIndex ?? null,
+        eventId: rootStep.id ?? null,
+        screenshot: rootStep.screenshot ?? rootStep.screenshot_path ?? terminal?.screenshot_path ?? null,
+      } : null,
+    };
   });
 }
 
-export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, resultMarkdownPath, criteria = [], requireTestMd = false }) {
+export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, cancelled = false, error: processError = null, resultMarkdownPath, criteria = [], requireTestMd = false }) {
   const events = parseJsonLines(stdout);
   const markdown = readResultMarkdown(resultMarkdownPath);
   const bugVerdict = bugVerdictFromEvents(events);
-  const eventStatus = statusFromEvents(events, { exitCode, timedOut, requireTestMd });
+  const eventStatus = statusFromEvents(events, { exitCode, timedOut, cancelled, requireTestMd });
   const status = eventStatus;
   const normalizedStatus = isVerifierFailure(bugVerdict)
     ? "VERIFIER_ERROR"
@@ -186,11 +234,14 @@ export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, re
   const sessionEvent = [...events].reverse().find((event) => event.session_id || event.sessionId);
   const sessionId = sessionEvent?.session_id ?? sessionEvent?.sessionId ?? null;
   const currentMarkdown = markdown?.sessionId && sessionId && markdown.sessionId === sessionId ? markdown : null;
+  const execution = summarizeExecution(events);
+  const evidence = { ...evidenceHint(stderr), screenshotPath: terminal?.screenshot_path ?? null };
   return {
     status: normalizedStatus,
     exitCode,
+    cancelled,
     sessionId,
-    criteria: mapCriteria(criteria, normalizedStatus, currentMarkdown?.steps ?? [], events),
+    criteria: mapCriteria(criteria, normalizedStatus, currentMarkdown?.steps ?? [], events, terminal),
     events: redactValue(events),
     summary: terminal?.summary || bugVerdict?.root_cause || bugVerdict?.one_liner || null,
     oneLiner: terminal?.one_liner || bugVerdict?.one_liner || null,
@@ -199,7 +250,14 @@ export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, re
     credits: terminal?.credits_consumed ?? terminal?.credits ?? null,
     duration: terminal?.duration ?? summary?.duration_s ?? null,
     testUrl: terminal?.test_url ?? null,
+    finalUrl: terminal?.final_url ?? terminal?.url ?? null,
+    screenshotPath: terminal?.screenshot_path ?? null,
     bugVerdict: redactValue(bugVerdict),
+    stepsTaken: execution.stepsTaken,
+    actions: execution.actions,
+    failures: execution.failures,
+    evidence,
+    error: processError ? `Kane process could not start: ${processError.message ?? processError}` : null,
     failedStep: events.find((event) => event.type === "test_md_step_end" && normalizeVerificationStatus(event.status) === "FAIL")?.step_index
       ?? events.find((event) => event.type === "step_end" && normalizeVerificationStatus(event.status) === "FAIL")?.index
       ?? null,
@@ -222,7 +280,7 @@ function persistRawEvidence(directory, stdout, stderr) {
   return { stdoutPath, stderrPath };
 }
 
-export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, evidenceDirectory }) {
+export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, evidenceDirectory, signal }) {
   const invocation = locateKaneInvocation(config);
   const relativeTestPath = relative(cwd, testFile) || basename(testFile);
   const testArgument = relativeTestPath.startsWith("..") ? testFile : relativeTestPath;
@@ -239,7 +297,9 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     command: invocation.command,
     args,
     cwd,
+    env: { KANE_CLI_USER_AGENT: "elenchos", ...(config.env ?? {}) },
     timeoutMs: ((config.timeoutSeconds ?? 120) + 30) * 1000,
+    signal,
   });
   const stem = basename(testFile).replace(/_test\.md$/i, "");
   const resultMarkdownPath = join(dirname(testFile), `output-${stem}`, "Result.md");
@@ -248,6 +308,8 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     stderr: result.stderr,
     exitCode: result.exitCode,
     timedOut: result.timedOut,
+    cancelled: result.cancelled,
+    error: result.error,
     resultMarkdownPath,
     criteria,
     requireTestMd: true,
@@ -256,6 +318,7 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     ...parsed,
     invocation: invocation.source,
     timedOut: result.timedOut,
+    cancelled: result.cancelled,
     evidencePaths: persistRawEvidence(evidenceDirectory, result.stdout, result.stderr),
   };
 }

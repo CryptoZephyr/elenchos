@@ -10,10 +10,28 @@ function commandParts(start) {
   return { command: parts[0], args: parts.slice(1) };
 }
 
-async function waitForReady(url, timeoutMs, child) {
+function waitForInterval(ms, signal) {
+  return new Promise((resolvePromise) => {
+    let timer;
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const onAbort = () => {
+      clearTimeout(timer);
+      cleanup();
+      resolvePromise();
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      resolvePromise();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function waitForReady(url, timeoutMs, child, signal) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "No response yet";
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw new Error("Application startup cancelled");
     if (child.exitCode !== null) throw new Error(`Application exited with code ${child.exitCode}`);
     try {
       const response = await fetch(url);
@@ -22,8 +40,9 @@ async function waitForReady(url, timeoutMs, child) {
     } catch (error) {
       lastError = error.message;
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+    await waitForInterval(250, signal);
   }
+  if (signal?.aborted) throw new Error("Application startup cancelled");
   throw new Error(`Application did not become ready at ${url}: ${lastError}`);
 }
 
@@ -37,7 +56,9 @@ function sanitizeLogs(stdoutPath, stderrPath) {
   sanitizeLog(stderrPath);
 }
 
-export async function startApplication({ config, cwd, logDirectory }) {
+export async function startApplication({ config, cwd, logDirectory, signal }) {
+  if (!config?.start) throw new Error("Application start command is not configured. Run elenchos init with --start <command>.");
+  if (!config?.url) throw new Error("Application URL is not configured. Run elenchos init with --url <url>.");
   const parts = commandParts(config.start);
   mkdirSync(logDirectory, { recursive: true });
   const stdoutPath = resolve(logDirectory, "application.stdout.log");
@@ -53,7 +74,7 @@ export async function startApplication({ config, cwd, logDirectory }) {
     appendFileSync(stderrPath, `${error.stack ?? error}\n`, "utf8");
   });
   try {
-    await waitForReady(config.url, config.readinessTimeoutMs ?? 60000, managed.child);
+    await waitForReady(config.url, config.readinessTimeoutMs ?? 60000, managed.child, signal);
   } catch (error) {
     await stopManagedProcess(managed);
     sanitizeLogs(stdoutPath, stderrPath);

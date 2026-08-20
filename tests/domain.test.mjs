@@ -14,6 +14,18 @@ test("normalizes acceptance criteria with stable ids", () => {
   ]);
 });
 
+test("preserves optional setup and preconditions in the normalized task", () => {
+  const task = normalizeTask({
+    id: "demo",
+    title: "Demo",
+    setup: ["Seed a user"],
+    preconditions: { authenticated: true },
+    acceptanceCriteria: ["The page loads"],
+  });
+  assert.deepEqual(task.setup, ["Seed a user"]);
+  assert.deepEqual(task.preconditions, { authenticated: true });
+});
+
 test("rejects duplicate criterion ids", () => {
   assert.throws(() => normalizeTask({
     id: "demo",

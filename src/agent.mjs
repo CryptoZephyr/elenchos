@@ -4,10 +4,11 @@ import { commandExists, runCommand } from "./process.mjs";
 import { replacePrompt, trimForLog } from "./utils.mjs";
 
 export function detectAgent() {
-  for (const candidate of ["agy", "claude", "gemini", "codex"]) {
-    if (commandExists(candidate)) return candidate;
-  }
-  return null;
+  return detectAgents()[0] ?? null;
+}
+
+export function detectAgents() {
+  return ["agy", "claude", "gemini", "codex"].filter((candidate) => commandExists(candidate));
 }
 
 export function defaultAgentConfig(provider = detectAgent()) {
@@ -98,7 +99,7 @@ export function buildRepairPrompt(task, failure, cwd, attempt) {
   ].join("\n");
 }
 
-export async function runAgent({ config, prompt, cwd }) {
+export async function runAgent({ config, prompt, cwd, signal }) {
   if (!config?.command) throw new Error("No coding-agent command configured");
   const { command, args } = renderAgentCommand(config, prompt, cwd);
   const env = { ...(config.env ?? {}) };
@@ -112,8 +113,10 @@ export async function runAgent({ config, prompt, cwd }) {
     cwd: config.launchCwd ?? cwd,
     env,
     timeoutMs: config.timeoutMs ?? 300000,
+    signal,
   });
   if (result.error) throw new Error(`Agent process could not start: ${result.error.message}`);
+  if (result.cancelled) throw new Error("Agent run cancelled");
   if (result.timedOut) throw new Error(`Agent timed out after ${config.timeoutMs ?? 120000}ms`);
   if (result.exitCode !== 0) {
     const raw = result.stderr || result.stdout;

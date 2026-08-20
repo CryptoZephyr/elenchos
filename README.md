@@ -29,7 +29,13 @@ npm install -g elenchos
 elenchos --help
 ```
 
-Run `elenchos init` inside the repository you want to verify. It creates an ignored local configuration and checks whether Kane is installed and authenticated.
+Run `elenchos init` inside the repository you want to verify. It identifies the project type, reports detected application and agent choices, creates an ignored local configuration, and checks whether Kane is installed and authenticated. Elenchos leaves the configuration incomplete when it cannot choose safely. Resolve the reported values explicitly:
+
+```bash
+npx elenchos init --force --start "npm run dev" --url http://127.0.0.1:5173 --agent agy
+```
+
+The init step does not guess between multiple start commands or multiple supported agent CLIs. The application start command and URL must be configured before a run can begin.
 
 Install Kane and sign in before running Elenchos:
 
@@ -38,6 +44,12 @@ npm install -g @testmuai/kane-cli
 kane-cli login
 kane-cli whoami
 kane-cli balance
+```
+
+Install the official Kane coding-agent skill when you want Kane to author or debug browser tests from an agent workflow:
+
+```bash
+npx @testmuai/kane-cli-skill
 ```
 
 ## Run the included proof
@@ -62,13 +74,15 @@ npx elenchos verify demo/tasks/add-task.json
 
 ## Task format
 
-Each task has stable acceptance criteria and points to a Kane-authored `_test.md` file:
+Each task has stable acceptance criteria and points to a Kane-authored `_test.md` file. Optional `setup` and `preconditions` values are included in the implementation prompt and locked into the verification contract:
 
 ```json
 {
   "id": "add-task",
   "title": "Add a task",
   "description": "A user can add a task from the main screen.",
+  "setup": ["Start the local application"],
+  "preconditions": { "page": "/" },
   "acceptanceCriteria": [
     { "id": "AC-001", "description": "The new task appears in the list" }
   ],
@@ -78,11 +92,21 @@ Each task has stable acceptance criteria and points to a Kane-authored `_test.md
 }
 ```
 
-Elenchos doesn't generate this test. Author it with Kane so the system that builds the code can't rewrite the success criteria. Put each criterion ID in the matching Kane step heading, such as `AC-001 Page loads`. Elenchos leaves a criterion `UNVERIFIED` when structured Kane events don't identify it explicitly.
+Elenchos doesn't hand-write this test. For a quick task, use Kane's supported generation flow through the Elenchos author command:
+
+```bash
+npx elenchos author demo/tasks/add-task.json --output demo/tests/add-task_test.md
+```
+
+That command runs `kane-cli generate`, consumes the structured authoring result, then runs the official `generate --save --req ... --agent` step. If Kane saves more than one Functional test, Elenchos stops and asks you to select the test that belongs in the task contract. A clarification is also returned for you to answer before saving.
+
+For requirement documents and coverage accounting, use Kane's assurance flow instead. In that case ingest the PRD or specification with `kane-cli context ingest ... --mode agent`, design tests with `kane-cli design tests --use-case ... --mode agent`, and run each accepted saved test with `kane-cli testmd run ... --agent`. Never hand-write a Kane test case to make a failing requirement pass.
+
+Put each criterion ID in the matching Kane step heading, such as `AC-001 Page loads`. Elenchos leaves a criterion `UNVERIFIED` when structured Kane events don't identify it explicitly.
 
 ## Evidence and trust boundary
 
-Every run is stored under `.elenchos/runs/<run-id>`. Each attempt has separate application logs and Kane structured output. Elenchos applies best-effort redaction to common credential fields and patterns before persistence.
+Every run is stored under `.elenchos/runs/<run-id>`. Each attempt has separate application logs and Kane structured output. Human-readable summaries include the final Kane result, duration, step count, key actions, mapped criterion observations, failure details, and whether Kane supplied an evidence pack. Elenchos applies best-effort redaction to common credential fields and patterns before persistence.
 
 `PASS` means Kane completed the browser contract against one recorded code state. `FAIL` means Kane found a product failure. Browser, platform, timeout, incomplete output, and stale evidence are recorded as `VERIFIER_ERROR`.
 

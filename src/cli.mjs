@@ -6,12 +6,14 @@ import { loadTask } from "./task.mjs";
 import { executeRun } from "./orchestrator.mjs";
 import { printRunSummary } from "./report.mjs";
 import { readJson } from "./utils.mjs";
+import { authorKaneTest, formatAuthorSummary } from "./author.mjs";
 
 function usage() {
   return `Elenchos - independent verification for AI coding agents
 
 Usage:
-  elenchos init [--force]
+  elenchos init [--force] [--start <command>] [--url <url>] [--agent <agy|claude|gemini|codex>]
+  elenchos author <task.json> [--output <path>] [--force] [--json]
   elenchos run <task.json> [--json]
   elenchos verify <task.json> [--json]
   elenchos status <run-id> [--json]
@@ -35,6 +37,19 @@ function parseFlags(values) {
   return { positional, flags };
 }
 
+async function withAbortSignal(work) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
+  try {
+    return await work(controller.signal);
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
+  }
+}
+
 async function main() {
   const [command = "help", ...rest] = process.argv.slice(2);
   const { positional, flags } = parseFlags(rest);
@@ -46,13 +61,49 @@ async function main() {
   }
 
   if (command === "init") {
-    const result = await initProject(cwd, { force: Boolean(flags.force) });
+    const result = await initProject(cwd, {
+      force: Boolean(flags.force),
+      start: flags.start,
+      url: flags.url,
+      agent: flags.agent,
+    });
     process.stdout.write(`Wrote ${result.path}\n`);
+    process.stdout.write(`Project type: ${result.config.detected.projectType}\n`);
     process.stdout.write(`Detected agent: ${result.config.detected.agent}\n`);
+    if (result.config.detected.agentCandidates?.length > 1) {
+      process.stdout.write(`Agent candidates: ${result.config.detected.agentCandidates.join(", ")}\n`);
+    }
     process.stdout.write(`Detected Kane: ${result.config.detected.kane}\n`);
     process.stdout.write(`Kane readiness: ${result.config.detected.kaneReady ? "authenticated" : "needs setup"}\n`);
     if (result.config.detected.kaneAction) process.stdout.write(`Next step: ${result.config.detected.kaneAction}\n`);
     process.stdout.write(`Application: ${result.config.application.start ?? "not detected"}\n`);
+    process.stdout.write(`URL: ${result.config.application.url ?? "not detected"}\n`);
+    if (result.config.detected.needsSetup?.length) {
+      process.stdout.write(`Setup needed: ${result.config.detected.needsSetup.join(", ")}\n`);
+      process.stdout.write("Pass --start, --url, or --agent to resolve detected choices, then rerun init --force.\n");
+    }
+    return;
+  }
+
+  if (command === "author") {
+    const taskPath = positional[0];
+    if (!taskPath) throw new Error("author requires a task JSON path");
+    const loadedConfig = existsSync(resolve(cwd, flags.config ?? ".elenchos/config.json"))
+      ? loadConfig(cwd, flags.config)
+      : {};
+    const repositoryRoot = resolve(cwd, loadedConfig.repository ?? ".");
+    const task = loadTask(resolve(repositoryRoot, taskPath));
+    const outputPath = flags.output ?? task.verification?.testFile ?? `tests/${task.id}_test.md`;
+    const result = await withAbortSignal((signal) => authorKaneTest({
+      task,
+      cwd: repositoryRoot,
+      outputPath,
+      force: Boolean(flags.force),
+      config: loadedConfig.verification ?? {},
+      signal,
+    }));
+    process.stdout.write(flags.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAuthorSummary(result)}\n`);
+    if (result.status !== "COMPLETED") process.exitCode = 1;
     return;
   }
 
@@ -73,7 +124,7 @@ async function main() {
   const repositoryRoot = resolve(cwd, loadedConfig.repository ?? ".");
   const config = { ...loadedConfig, __root: repositoryRoot };
   const task = loadTask(resolve(repositoryRoot, taskPath));
-  const result = await executeRun({ task, config, cwd: repositoryRoot, mode: command });
+  const result = await withAbortSignal((signal) => executeRun({ task, config, cwd: repositoryRoot, mode: command, signal }));
   printRunSummary(result.run, { json: Boolean(flags.json) });
   if (result.run.status !== "VERIFIED") process.exitCode = 1;
 }
