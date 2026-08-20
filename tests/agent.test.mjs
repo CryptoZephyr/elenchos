@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isAuthenticationFailure, runAgent, structuredAgentFailure } from "../src/agent.mjs";
@@ -43,8 +43,8 @@ test("can launch an agent from its authenticated directory while passing the wor
       cwd: workspace,
     });
     const output = JSON.parse(result.stdout);
-    assert.equal(output.launch.toLowerCase(), launchCwd.toLowerCase());
-    assert.equal(output.workspace.toLowerCase(), workspace.toLowerCase());
+    assert.equal(realpathSync(output.launch).toLowerCase(), realpathSync(launchCwd).toLowerCase());
+    assert.equal(realpathSync(output.workspace).toLowerCase(), realpathSync(workspace).toLowerCase());
   } finally {
     rmSync(launchCwd, { recursive: true, force: true });
     rmSync(workspace, { recursive: true, force: true });

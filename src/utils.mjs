@@ -29,7 +29,7 @@ export function repositoryPath(root, requested) {
     throw new Error("The configured repository does not exist");
   }
 
-  if (!isWithin(rootAbsolute, absolute) && !(isAbsolute(requested) && isWithin(realRoot, absolute))) {
+  if (!isWithin(rootAbsolute, absolute) && !isAbsolute(requested)) {
     throw new Error("The requested path must stay inside the configured repository");
   }
 
