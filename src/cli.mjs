@@ -7,12 +7,14 @@ import { executeRun } from "./orchestrator.mjs";
 import { printRunSummary } from "./report.mjs";
 import { readJson } from "./utils.mjs";
 import { authorKaneTest, formatAuthorSummary } from "./author.mjs";
+import { startMcpServer } from "./mcp-server.mjs";
 
 function usage() {
   return `Elenchos - independent verification for AI coding agents
 
 Usage:
   elenchos init [--force] [--start <command>] [--url <url>] [--agent <agy|claude|gemini|codex>]
+  elenchos mcp [--repo <path>]
   elenchos author <task.json> [--output <path>] [--refine <answer> --request-id <id>] [--force] [--json]
   elenchos run <task.json> [--json]
   elenchos verify <task.json> [--json]
@@ -82,6 +84,11 @@ async function main() {
       process.stdout.write(`Setup needed: ${result.config.detected.needsSetup.join(", ")}\n`);
       process.stdout.write("Pass --start, --url, or --agent to resolve detected choices, then rerun init --force.\n");
     }
+    return;
+  }
+
+  if (command === "mcp") {
+    await startMcpServer({ root: cwd });
     return;
   }
 

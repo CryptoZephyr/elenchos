@@ -53,7 +53,7 @@ The agent's summary is useful context, but it never decides whether the run pass
 - It does not hand-write a Kane test during verification.
 - It does not treat agent narration as proof.
 - It does not turn an incomplete Kane response into a product failure.
-- It does not provide a hosted service, a multi-agent comparison report, GitHub checks, or a replacement for Kane's own assurance workflows.
+- It does not provide a hosted service, a multi-agent comparison report, GitHub comments, or a replacement for Kane's own assurance workflows.
 
 Use a container, virtual machine, or other operating-system boundary when the repository or agent is not trusted. See [SECURITY.md](SECURITY.md) for the threat boundary.
 
@@ -398,6 +398,7 @@ Elenchos is a local Node.js CLI. It has no application backend and does not host
 | src/contract.mjs | Hashes the task and Kane test and detects contract changes. |
 | src/orchestrator.mjs | Coordinates worktrees, the agent, application lifecycle, Kane, repairs, and cleanup. |
 | src/kane.mjs | Runs Kane, parses structured events, classifies outcomes, and maps criterion evidence. |
+| src/mcp-server.mjs | Exposes repository inspection, contract, run status, and explicit verification tools over local stdio MCP. |
 | src/workspace.mjs | Captures Git state, writes workspace evidence, and safely removes detached worktrees. |
 | src/report.mjs | Prints human-readable and JSON run summaries. |
 
@@ -420,6 +421,7 @@ The package scripts are:
 | npm run build | Checks source syntax. |
 | npm test | Runs the Node test suite with coverage. |
 | npm run demo | Starts the included demo application. |
+| npm run mcp -- --repo . | Starts the local stdio MCP server for the selected repository. |
 | npm run proof | Runs the demo task through Elenchos using the local config. |
 | npm audit --omit=dev | Checks production dependency vulnerabilities. |
 | npm pack --dry-run | Previews the public npm package contents. |
@@ -432,20 +434,49 @@ Before committing a change, check the public boundary:
 
 Keep private planning files, local run bundles, credentials, session data, logs, and browser evidence out of commits and package contents.
 
+## MCP and GitHub Actions
+
+The repository includes a local stdio MCP server for coding agents. From a checkout, start it with:
+
+    node src/cli.mjs mcp --repo .
+
+An MCP client can launch that process with a configuration like this, replacing the paths with absolute paths for the local machine:
+
+    {
+      "mcpServers": {
+        "elenchos": {
+          "command": "node",
+          "args": [
+            "/path/to/elenchos/src/cli.mjs",
+            "mcp",
+            "--repo",
+            "/path/to/project"
+          ]
+        }
+      }
+    }
+
+The read-only tools inspect the repository, load a task, inspect the task and Kane test contract, and read a sanitized run summary. The explicit verification tool runs the existing Elenchos verify mode. It can start the application, consume Kane credits, and write local .elenchos evidence. It never launches a coding agent or edits source files through the MCP surface. Repository-relative paths are required, and raw Kane output, local evidence paths, and credential-bearing fields are filtered from MCP responses.
+
+The included .github/workflows/verification.yml workflow runs syntax, test, and whitespace checks on pull requests and manual runs. Its Kane job is opt-in. Enable it with the repository variable ELENCHOS_KANE_ENABLED set to true and add these repository secrets:
+
+    KANE_USERNAME
+    KANE_ACCESS_KEY
+
+KANE_PROJECT_ID and KANE_FOLDER_ID are optional secrets for selecting a Kane project or folder. The workflow passes these values to the official Kane CLI login flags. It does not print the secrets, post pull request comments, or request GitHub write permissions. Pull requests from forks run the repository checks and skip the Kane job because GitHub does not provide repository secrets to them.
+
 ## Roadmap
 
 The next product milestone is a two-agent comparison flow with the same task and Kane contract, isolated candidate workspaces, repair-round metrics, and a comparison report.
 
 Later work may add:
 
-- GitHub checks;
-- MCP or skill integrations;
 - shareable reports and badges;
 - richer multi-step diagnosis and repair policies;
 - multi-task and multi-repository execution;
 - optional container or virtual-machine isolation.
 
-These are future work. The current release verifies one configured agent per run and uses repository worktree isolation only.
+The current repository verifies one configured agent per run, provides a local MCP adapter, and includes an opt-in GitHub verification workflow. It still uses repository worktree isolation only, and the two-agent comparison remains the next product milestone.
 
 ## License and security
 

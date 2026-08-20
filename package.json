@@ -11,6 +11,7 @@
     "test": "node --test --experimental-test-coverage",
     "demo": "node demo/target-app.mjs",
     "elenchos": "node src/cli.mjs",
+    "mcp": "node src/cli.mjs mcp",
     "proof": "node src/cli.mjs run demo/tasks/add-task.json"
   },
   "engines": {
@@ -41,5 +42,9 @@
     "url": "https://github.com/CryptoZephyr/elenchos/issues"
   },
   "homepage": "https://github.com/CryptoZephyr/elenchos#readme",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  }
 }

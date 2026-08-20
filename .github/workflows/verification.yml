@@ -1,0 +1,102 @@
+name: Verification
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repository-checks:
+    name: Repository checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check syntax
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check whitespace
+        run: git diff --check
+
+  kane-verification:
+    name: Kane verification
+    if: ${{ vars.ELENCHOS_KANE_ENABLED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      KANE_USERNAME: ${{ secrets.KANE_USERNAME }}
+      KANE_ACCESS_KEY: ${{ secrets.KANE_ACCESS_KEY }}
+      KANE_PROJECT_ID: ${{ secrets.KANE_PROJECT_ID }}
+      KANE_FOLDER_ID: ${{ secrets.KANE_FOLDER_ID }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Kane CLI
+        run: npm install --global @testmuai/kane-cli@0.8.4
+
+      - name: Check Kane credentials are configured
+        shell: bash
+        run: |
+          if [[ -z "$KANE_USERNAME" || -z "$KANE_ACCESS_KEY" ]]; then
+            echo "Set KANE_USERNAME and KANE_ACCESS_KEY repository secrets before enabling Kane verification." >&2
+            exit 1
+          fi
+
+      - name: Authenticate Kane
+        shell: bash
+        run: |
+          args=(--username "$KANE_USERNAME" --access-key "$KANE_ACCESS_KEY")
+          if [[ -n "$KANE_PROJECT_ID" ]]; then args+=(--project-id "$KANE_PROJECT_ID"); fi
+          if [[ -n "$KANE_FOLDER_ID" ]]; then args+=(--folder-id "$KANE_FOLDER_ID"); fi
+          kane-cli login "${args[@]}"
+          kane-cli whoami
+          kane-cli balance
+
+      - name: Initialize the demo verification project
+        run: npx --no-install elenchos init --force --start "node demo/target-app.mjs" --url http://127.0.0.1:3000
+
+      - name: Prepare the demo verification config
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const path = ".elenchos/config.json";
+          const config = JSON.parse(fs.readFileSync(path, "utf8"));
+          config.application = {
+            ...(config.application ?? {}),
+            env: {
+              ...(config.application?.env ?? {}),
+              ELENCHOS_DEMO_BROKEN: "0",
+            },
+          };
+          fs.writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`);
+          NODE
+
+      - name: Run the Kane-backed verification
+        run: npx --no-install elenchos verify demo/tasks/add-task.json
