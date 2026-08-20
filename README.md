@@ -100,6 +100,12 @@ npx elenchos author demo/tasks/add-task.json --output demo/tests/add-task_test.m
 
 That command runs `kane-cli generate`, consumes the structured authoring result, then runs the official `generate --save --req ... --agent` step. If Kane saves more than one Functional test, Elenchos stops and asks you to select the test that belongs in the task contract. A clarification is also returned for you to answer before saving.
 
+When Kane asks a clarification, continue the same request without leaving Elenchos:
+
+```bash
+npx elenchos author demo/tasks/add-task.json --refine "Use the local Proofboard page" --request-id <request-id> --output demo/tests/add-task_test.md
+```
+
 For requirement documents and coverage accounting, use Kane's assurance flow instead. In that case ingest the PRD or specification with `kane-cli context ingest ... --mode agent`, design tests with `kane-cli design tests --use-case ... --mode agent`, and run each accepted saved test with `kane-cli testmd run ... --agent`. Never hand-write a Kane test case to make a failing requirement pass.
 
 Put each criterion ID in the matching Kane step heading, such as `AC-001 Page loads`. Elenchos leaves a criterion `UNVERIFIED` when structured Kane events don't identify it explicitly.

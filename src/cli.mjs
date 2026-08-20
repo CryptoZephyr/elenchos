@@ -13,7 +13,7 @@ function usage() {
 
 Usage:
   elenchos init [--force] [--start <command>] [--url <url>] [--agent <agy|claude|gemini|codex>]
-  elenchos author <task.json> [--output <path>] [--force] [--json]
+  elenchos author <task.json> [--output <path>] [--refine <answer> --request-id <id>] [--force] [--json]
   elenchos run <task.json> [--json]
   elenchos verify <task.json> [--json]
   elenchos status <run-id> [--json]
@@ -101,6 +101,8 @@ async function main() {
       force: Boolean(flags.force),
       config: loadedConfig.verification ?? {},
       signal,
+      refine: flags.refine === true ? null : flags.refine,
+      requestId: flags["request-id"],
     }));
     process.stdout.write(flags.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAuthorSummary(result)}\n`);
     if (result.status !== "COMPLETED") process.exitCode = 1;

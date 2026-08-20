@@ -88,19 +88,24 @@ function savedPaths(result, generatedRoot, cwd) {
   return [...new Set([...paths, ...discovered].filter((path) => existsSync(path)))];
 }
 
-export async function authorKaneTest({ task, cwd, outputPath, force = false, config = {}, signal }) {
+export async function authorKaneTest({ task, cwd, outputPath, force = false, config = {}, signal, refine = null, requestId = null }) {
   const target = resolve(cwd, outputPath);
   if (!/_test\.md$/i.test(target)) throw new Error("The Kane output path must end with _test.md");
   if (existsSync(target) && !force) throw new Error(`Kane test already exists at ${target}. Use --force to replace it.`);
+  if (refine && !requestId) throw new Error("--refine requires --request-id from an earlier Kane authoring result");
+  if (requestId && !refine) throw new Error("--request-id requires --refine");
 
   const invocation = locateKaneInvocation(config);
   const generatedRoot = join(cwd, ".testmuai", "elenchos-authoring", createId("generate"));
   mkdirSync(generatedRoot, { recursive: true });
   const timeoutMs = config.authoringTimeoutMs ?? 180000;
   const environment = { KANE_CLI_USER_AGENT: "elenchos", ...(config.env ?? {}) };
+  const generationArgs = refine
+    ? [...invocation.prefixArgs, "generate", refine, "--refine", "--req", String(requestId), "--agent"]
+    : [...invocation.prefixArgs, "generate", promptForTask(task), "--agent"];
   const generated = await runCommand({
     command: invocation.command,
-    args: [...invocation.prefixArgs, "generate", promptForTask(task), "--agent"],
+    args: generationArgs,
     cwd,
     env: environment,
     timeoutMs,
@@ -108,11 +113,12 @@ export async function authorKaneTest({ task, cwd, outputPath, force = false, con
   });
   const first = parseKaneGenerateResult(generated);
   if (first.status !== "COMPLETED") return { ...first, invocation: invocation.source };
-  if (!first.requestId) return { ...first, status: "FAILED", error: "Kane did not return an authoring request id", invocation: invocation.source };
+  const authoringRequestId = first.requestId ?? requestId;
+  if (!authoringRequestId) return { ...first, status: "FAILED", error: "Kane did not return an authoring request id", invocation: invocation.source };
 
   const saved = await runCommand({
     command: invocation.command,
-    args: [...invocation.prefixArgs, "generate", "--save", "--req", String(first.requestId), "--out", generatedRoot, "--agent"],
+    args: [...invocation.prefixArgs, "generate", "--save", "--req", String(authoringRequestId), "--out", generatedRoot, "--agent"],
     cwd,
     env: environment,
     timeoutMs,
@@ -122,7 +128,7 @@ export async function authorKaneTest({ task, cwd, outputPath, force = false, con
   if (second.status !== "COMPLETED") {
     return {
       ...second,
-      requestId: second.requestId ?? first.requestId,
+      requestId: second.requestId ?? authoringRequestId,
       scenarios: first.scenarios,
       scenarioCount: first.scenarioCount,
       caseCount: first.caseCount,
@@ -134,7 +140,7 @@ export async function authorKaneTest({ task, cwd, outputPath, force = false, con
   if (generatedFiles.length !== 1) {
     return {
       ...second,
-      requestId: second.requestId ?? first.requestId,
+      requestId: second.requestId ?? authoringRequestId,
       scenarios: first.scenarios,
       scenarioCount: first.scenarioCount,
       caseCount: first.caseCount,
@@ -151,7 +157,7 @@ export async function authorKaneTest({ task, cwd, outputPath, force = false, con
   copyFileSync(generatedFiles[0], target);
   return {
     ...second,
-    requestId: second.requestId ?? first.requestId,
+    requestId: second.requestId ?? authoringRequestId,
     scenarios: first.scenarios,
     scenarioCount: first.scenarioCount,
     caseCount: first.caseCount,
@@ -168,6 +174,7 @@ export function formatAuthorSummary(result) {
   if (result.outputPath) lines.push(`Saved test: ${result.outputPath}`);
   if (result.generatedFiles?.length) lines.push(`Generated files: ${result.generatedFiles.join(", ")}`);
   if (result.clarification) lines.push(`Kane needs clarification: ${result.clarification}`);
+  if (result.clarification && result.requestId) lines.push(`Continue with --refine <answer> --request-id ${result.requestId}`);
   if (result.error) lines.push(`Error: ${result.error}`);
   return lines.join("\n");
 }

@@ -79,3 +79,40 @@ test("runs Kane generate and save without hand-writing the test file", async () 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("continues an existing Kane authoring request through refine and save", async () => {
+  const root = mkdtempSync(join(tmpdir(), "elenchos-author-refine-"));
+  const fakeKane = [
+    "const { mkdirSync, writeFileSync } = require('node:fs');",
+    "const { join } = require('node:path');",
+    "const args = process.argv.slice(1);",
+    "if (args.includes('--save')) {",
+    "  const out = args[args.indexOf('--out') + 1];",
+    "  mkdirSync(out, { recursive: true });",
+    "  const file = join(out, 'refined_test.md');",
+    "  writeFileSync(file, '# Refined by Kane\\n');",
+    "  process.stdout.write(JSON.stringify({ type: 'generate_save_result', saved: [file] }) + '\\n');",
+    "  process.stdout.write(JSON.stringify({ type: 'generate_done', request_id: 'req-20', status: 'completed' }) + '\\n');",
+    "} else {",
+    "  if (!args.includes('--refine') || args[args.indexOf('--req') + 1] !== 'req-20') process.exit(4);",
+    "  process.stdout.write(JSON.stringify({ type: 'generate_snapshot', scenario_count: 1, case_count: 1, scenarios: [] }) + '\\n');",
+    "  process.stdout.write(JSON.stringify({ type: 'generate_done', request_id: 'req-20', status: 'completed' }) + '\\n');",
+    "}",
+  ].join("\n");
+  try {
+    const fakePath = join(root, "fake-kane.cjs");
+    writeFileSync(fakePath, fakeKane, "utf8");
+    const result = await authorKaneTest({
+      task: { id: "refine-flow", title: "Refine flow", acceptanceCriteria: [{ id: "AC-001", description: "The page loads" }], verification: {} },
+      cwd: root,
+      outputPath: "tests/refine-flow_test.md",
+      config: { command: fakePath },
+      refine: "Use the local page",
+      requestId: "req-20",
+    });
+    assert.equal(result.status, "COMPLETED");
+    assert.equal(readFileSync(join(root, "tests", "refine-flow_test.md"), "utf8"), "# Refined by Kane\n");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

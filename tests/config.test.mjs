@@ -42,3 +42,7 @@ test("detects project type and leaves ambiguous app choices visible", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("rejects an unsupported agent override during onboarding", () => {
+  assert.throws(() => detectProject(process.cwd(), { agent: "unknown-agent" }), /Unsupported agent override/);
+});

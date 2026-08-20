@@ -74,6 +74,8 @@ function chooseCandidate(candidates, override) {
   return candidates.length === 1 ? candidates[0] : null;
 }
 
+const supportedAgents = new Set(["agy", "claude", "gemini", "codex"]);
+
 function authenticatedLaunchDirectory(agentConfig) {
   if (process.platform !== "win32" || agentConfig?.command !== "agy") return agentConfig;
   const systemRoot = process.env.SystemRoot ?? "C:\\Windows";
@@ -82,6 +84,9 @@ function authenticatedLaunchDirectory(agentConfig) {
 }
 
 export function detectProject(cwd, overrides = {}) {
+  if (overrides.agent && !supportedAgents.has(overrides.agent)) {
+    throw new Error(`Unsupported agent override: ${overrides.agent}. Choose agy, claude, gemini, or codex.`);
+  }
   const packageJson = readPackage(cwd);
   const projectType = detectProjectType(cwd, packageJson);
   const startCandidates = detectStartCandidates(cwd, packageJson, projectType);
