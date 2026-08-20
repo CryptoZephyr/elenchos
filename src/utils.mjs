@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
@@ -12,6 +12,18 @@ function isSensitiveKey(key) {
 function isWithin(root, candidate) {
   const fromRoot = relative(root, candidate);
   return !fromRoot || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot));
+}
+
+function hasFileSystemAncestor(candidate, expectedAncestor) {
+  const expected = statSync(expectedAncestor);
+  let cursor = candidate;
+  while (true) {
+    const current = statSync(cursor);
+    if (current.dev === expected.dev && current.ino === expected.ino) return true;
+    const parent = dirname(cursor);
+    if (parent === cursor) return false;
+    cursor = parent;
+  }
 }
 
 export function repositoryPath(root, requested) {
@@ -38,7 +50,7 @@ export function repositoryPath(root, requested) {
     try {
       const realProbe = realpathSync(probe);
       const canonical = resolve(realProbe, relative(probe, absolute));
-      if (!isWithin(realRoot, canonical)) {
+      if (!hasFileSystemAncestor(realProbe, realRoot)) {
         throw new Error("The requested path must stay inside the configured repository");
       }
       return canonical;
