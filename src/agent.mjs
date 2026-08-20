@@ -114,6 +114,7 @@ export async function runAgent({ config, prompt, cwd, signal }) {
     env,
     timeoutMs: config.timeoutMs ?? 300000,
     signal,
+    maxOutputBytes: config.maxOutputBytes,
   });
   if (result.error) throw new Error(`Agent process could not start: ${result.error.message}`);
   if (result.cancelled) throw new Error("Agent run cancelled");

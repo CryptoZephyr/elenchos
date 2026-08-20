@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { formatRunSummary } from "../src/report.mjs";
+import { formatRunJson, formatRunSummary } from "../src/report.mjs";
 
 test("formats the useful Kane result details without exposing raw evidence paths", () => {
   const summary = formatRunSummary({
@@ -29,4 +29,17 @@ test("formats the useful Kane result details without exposing raw evidence paths
   assert.match(summary, /Screenshot evidence: captured/);
   assert.match(summary, /Observed: The task was not visible/);
   assert.doesNotMatch(summary, /private\/run\.evidence/);
+});
+
+test("redacts credential-bearing strings from JSON run output", () => {
+  const output = formatRunJson({
+    id: "run-secret",
+    attempts: [{
+      application: {
+        url: "http://127.0.0.1:3000/?access_token=EXAMPLE_SECRET_VALUE",
+      },
+    }],
+  });
+  assert.doesNotMatch(output, /EXAMPLE_SECRET_VALUE/);
+  assert.match(output, /access_token=\[REDACTED\]/);
 });

@@ -50,3 +50,16 @@ test("can launch an agent from its authenticated directory while passing the wor
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test("rejects agent output that exceeds the capture limit", async () => {
+  await assert.rejects(() => runAgent({
+    config: {
+      provider: "fixture",
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('x'.repeat(8192))"],
+      maxOutputBytes: 256,
+    },
+    prompt: "unused",
+    cwd: process.cwd(),
+  }), /output exceeded/i);
+});

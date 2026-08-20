@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { redactText, redactValue, repositoryPath, shellSplit } from "../src/utils.mjs";
@@ -38,6 +38,18 @@ test("redacts prefixed and camel-case credential keys", () => {
   assert.equal(text, "KANE_ACCESS_KEY=[REDACTED] github_token=[REDACTED]");
 });
 
+test("redacts credential material inside structured string values", () => {
+  const marker = "EXAMPLE_SECRET_VALUE";
+  const value = redactValue({
+    summary: `token=${marker}`,
+    finalUrl: `http://127.0.0.1/callback?access_token=${marker}`,
+    events: [{ message: `authorization: Bearer ${marker}` }],
+  });
+  assert.doesNotMatch(JSON.stringify(value), new RegExp(marker));
+  assert.equal(value.summary, "token=[REDACTED]");
+  assert.equal(value.finalUrl, "http://127.0.0.1/callback?access_token=[REDACTED]");
+});
+
 test("rejects lexical and symlink escapes from a repository root", () => {
   const root = mkdtempSync(join(tmpdir(), "elenchos-path-root-"));
   const outside = mkdtempSync(join(tmpdir(), "elenchos-path-outside-"));
@@ -50,5 +62,20 @@ test("rejects lexical and symlink escapes from a repository root", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
     rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("returns canonical paths when the repository root is reached through an alias", () => {
+  const container = mkdtempSync(join(tmpdir(), "elenchos-path-alias-"));
+  const root = join(container, "root");
+  const alias = join(container, "alias");
+  try {
+    symlinkSync(container, root, process.platform === "win32" ? "junction" : "dir");
+    symlinkSync(root, alias, process.platform === "win32" ? "junction" : "dir");
+    writeFileSync(join(root, "existing.txt"), "safe\n", "utf8");
+    assert.equal(repositoryPath(alias, "existing.txt"), realpathSync(join(root, "existing.txt")));
+    assert.equal(repositoryPath(alias, "new/file.txt"), join(realpathSync(root), "new", "file.txt"));
+  } finally {
+    rmSync(container, { recursive: true, force: true });
   }
 });

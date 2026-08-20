@@ -10,7 +10,7 @@ The run is accepted only when the fixed task contract and Kane test are unchange
 - [Security policy](SECURITY.md)
 - [Recorded closed-loop evidence](EVIDENCE.md)
 
-The 0.1.4 release includes the MCP and doctor commands plus the hardening described below. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
+The 0.1.5 release includes the MCP and doctor commands plus stricter verification, safer output handling, and cross-platform CLI fixes. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
 
 ## Why it exists
 
@@ -80,7 +80,16 @@ Install the published CLI:
     npm install -g elenchos
     elenchos --help
 
-The 0.1.4 package includes the MCP and doctor commands and the repository hardening changes:
+The 0.1.5 package includes the MCP and doctor commands and these release hardening changes:
+
+- An overall Kane pass is accepted only when every declared acceptance criterion has a mapped pass.
+- Structured Kane and MCP output is scrubbed for credential-like values before it is saved or returned.
+- Repository paths resolve to their canonical location, including macOS path aliases, while symlink escapes remain blocked.
+- Windows can safely launch npm-installed coding-agent PowerShell shims without shell interpolation.
+- Application readiness checks abort stalled HTTP requests at the configured deadline.
+- Child-process output has a fixed capture limit, so a noisy process cannot grow memory without a bound.
+- Evidence includes committed agent changes relative to the original run revision.
+- The three-platform verification matrix now runs on every push to main as well as release tags.
 
     npm install
     npm run doctor -- --repo .

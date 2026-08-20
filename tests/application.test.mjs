@@ -1,9 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { startApplication, validateApplicationUrl } from "../src/application.mjs";
 import { runCommand } from "../src/process.mjs";
 
@@ -64,6 +64,42 @@ test("reports a process that exits before application readiness", async () => {
   }
 });
 
+test("enforces readiness timeout while an HTTP request is still pending", { timeout: 5000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "elenchos-app-stall-"));
+  const stalledServer = createServer((_request, response) => {
+    setTimeout(() => {
+      response.writeHead(200);
+      response.end("late");
+    }, 1500);
+  });
+  await new Promise((resolvePromise) => stalledServer.listen(0, "127.0.0.1", resolvePromise));
+  const address = stalledServer.address();
+
+  let app;
+  let failure;
+  try {
+    try {
+      app = await startApplication({
+        config: {
+          start: [process.execPath, "-e", "setInterval(() => {}, 1000)"],
+          url: `http://127.0.0.1:${address.port}`,
+          readinessTimeoutMs: 100,
+        },
+        cwd: root,
+        logDirectory: join(root, "logs"),
+      });
+    } catch (error) {
+      failure = error;
+    }
+    assert.match(failure?.message ?? "", /Application did not become ready/);
+  } finally {
+    if (app) await app.stop();
+    stalledServer.closeAllConnections();
+    await new Promise((resolvePromise) => stalledServer.close(resolvePromise));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("terminates a command after its timeout", async () => {
   const result = await runCommand({
     command: process.execPath,
@@ -118,6 +154,18 @@ test("cancels a running command through AbortSignal", async () => {
   assert.equal(result.timedOut, false);
 });
 
+test("caps captured child-process output", async () => {
+  const result = await runCommand({
+    command: process.execPath,
+    args: ["-e", "process.stdout.write('x'.repeat(8192)); setInterval(() => {}, 1000)"],
+    timeoutMs: 5000,
+    maxOutputBytes: 512,
+  });
+  assert.equal(result.outputLimitExceeded, true);
+  assert.ok(Buffer.byteLength(result.stdout) <= 512);
+  assert.notEqual(result.exitCode, 0);
+});
+
 test("requires loopback application URLs unless remote access is explicit", () => {
   assert.equal(validateApplicationUrl("http://127.0.0.1:3000"), "http://127.0.0.1:3000");
   assert.equal(validateApplicationUrl("http://[::1]:3000"), "http://[::1]:3000");
@@ -135,4 +183,44 @@ test("does not execute shell metacharacters in Windows npm arguments", async () 
     timeoutMs: 10000,
   });
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(marker));
+});
+
+test("runs a detected Windows npm-style PowerShell shim without shell interpolation", async () => {
+  if (process.platform !== "win32") return;
+  const root = mkdtempSync(join(tmpdir(), "elenchos-windows-shim-"));
+  const command = "elenchos-agent-fixture";
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(join(root, `${command}.cmd`), "@echo off\r\nexit /b 9\r\n", "utf8");
+    writeFileSync(join(root, `${command}.ps1`), "param([string]$Value)\n[Console]::Write($Value)\n", "utf8");
+    process.env.PATH = `${root}${delimiter}${previousPath ?? ""}`;
+    const literal = "safe & echo not-executed";
+    const result = await runCommand({ command, args: [literal], timeoutMs: 10000 });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, literal);
+  } finally {
+    process.env.PATH = previousPath;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preserves Windows PATH precedence when a later executable has the same name", async () => {
+  if (process.platform !== "win32") return;
+  const first = mkdtempSync(join(tmpdir(), "elenchos-windows-first-"));
+  const second = mkdtempSync(join(tmpdir(), "elenchos-windows-second-"));
+  const command = "elenchos-precedence-fixture";
+  const previousPath = process.env.PATH;
+  try {
+    writeFileSync(join(first, `${command}.cmd`), "@echo off\r\nexit /b 9\r\n", "utf8");
+    writeFileSync(join(first, `${command}.ps1`), "[Console]::Write('first')\n", "utf8");
+    copyFileSync(process.execPath, join(second, `${command}.exe`));
+    process.env.PATH = `${first}${delimiter}${second}${delimiter}${previousPath ?? ""}`;
+    const result = await runCommand({ command, timeoutMs: 10000 });
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stdout, "first");
+  } finally {
+    process.env.PATH = previousPath;
+    rmSync(first, { recursive: true, force: true });
+    rmSync(second, { recursive: true, force: true });
+  }
 });

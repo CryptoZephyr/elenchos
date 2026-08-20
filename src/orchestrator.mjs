@@ -7,7 +7,7 @@ import { transitionRun, createRun } from "./domain.mjs";
 import { runKaneTest } from "./kane.mjs";
 import { createRunPersistence } from "./persistence.mjs";
 import { nowIso, repositoryPath } from "./utils.mjs";
-import { captureRepositoryState, prepareWorkspace, removeWorkspace, sameRepositoryState, writeWorkspaceEvidence } from "./workspace.mjs";
+import { captureRepositoryState, prepareWorkspace, removeWorkspace, sameRepositoryContent, sameRepositoryState, writeWorkspaceEvidence } from "./workspace.mjs";
 
 function saveTransition(run, persistence, next, detail) {
   transitionRun(run, next, detail);
@@ -124,6 +124,13 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
         saveTransition(run, persistence, "ERROR", run.error);
         break;
       }
+      if (verification.status === "PASS" && task.acceptanceCriteria.some((criterion) => {
+        return verification.criteria?.find((result) => result.id === criterion.id)?.status !== "PASS";
+      })) {
+        run.error = "Kane passed overall but did not verify every acceptance criterion";
+        saveTransition(run, persistence, "ERROR", run.error);
+        break;
+      }
       if (verification.status === "PASS") {
         run.verifiedRevision = verifiedRef;
         saveTransition(run, persistence, "VERIFIED", "Kane passed the verification contract");
@@ -151,7 +158,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
       throwIfCancelled();
       assertVerificationContract(contract, task);
       const afterRepair = captureRepositoryState(executionCwd);
-      if (afterRepair.diffHash === beforeRepair.diffHash) {
+      if (sameRepositoryContent(beforeRepair, afterRepair)) {
         throw new Error("The coding agent reported a repair but did not change the implementation");
       }
       run.repairs ??= [];
@@ -167,7 +174,11 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
   } finally {
     if (workspace?.kind === "git-worktree" && config.verification?.retainWorkspace !== true) {
       try {
-        run.workspaceEvidence = writeWorkspaceEvidence({ cwd: workspace.cwd, directory: persistence.directory });
+        run.workspaceEvidence = writeWorkspaceEvidence({
+          cwd: workspace.cwd,
+          directory: persistence.directory,
+          baselineHead: workspace.baseline.head,
+        });
         removeWorkspace({ root: workspace.baseline.root, workspace: workspace.cwd });
         run.repository.cleanedUp = true;
       } catch (error) {

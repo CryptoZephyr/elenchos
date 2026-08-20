@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -12,7 +12,7 @@ import { readJson, redactValue, repositoryPath, trimForLog } from "./utils.mjs";
 import { VERSION } from "./version.mjs";
 
 function relativePath(root, path) {
-  return relative(root, path) || ".";
+  return relative(realpathSync(root), path) || ".";
 }
 
 function safeRunId(runId) {
@@ -34,6 +34,8 @@ function toolError(error, root) {
   let message = trimForLog(error instanceof Error ? error.message : String(error), 2000);
   const normalizedRoot = resolve(root);
   if (message.includes(normalizedRoot)) message = message.split(normalizedRoot).join("<repository>");
+  const canonicalRoot = realpathSync(root);
+  if (message.includes(canonicalRoot)) message = message.split(canonicalRoot).join("<repository>");
   return {
     content: [{ type: "text", text: message }],
     isError: true,

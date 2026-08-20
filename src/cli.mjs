@@ -5,7 +5,7 @@ import { initProject, loadConfig } from "./config.mjs";
 import { loadTask } from "./task.mjs";
 import { executeRun } from "./orchestrator.mjs";
 import { printRunSummary } from "./report.mjs";
-import { readJson, repositoryPath } from "./utils.mjs";
+import { readJson, redactValue, repositoryPath } from "./utils.mjs";
 import { authorKaneTest, formatAuthorSummary } from "./author.mjs";
 import { startMcpServer } from "./mcp-server.mjs";
 import { createDoctorReport, formatDoctorReport } from "./doctor.mjs";
@@ -99,7 +99,7 @@ async function main() {
       configPath: flags.config,
       taskPath: positional[0],
     });
-    process.stdout.write(flags.json ? `${JSON.stringify(report, null, 2)}\n` : `${formatDoctorReport(report)}\n`);
+    process.stdout.write(flags.json ? `${JSON.stringify(redactValue(report), null, 2)}\n` : `${formatDoctorReport(report)}\n`);
     if (flags.strict && report.verification.status !== "ready") process.exitCode = 1;
     return;
   }
@@ -124,7 +124,7 @@ async function main() {
       refine: flags.refine === true ? null : flags.refine,
       requestId: flags["request-id"],
     }));
-    process.stdout.write(flags.json ? `${JSON.stringify(result, null, 2)}\n` : `${formatAuthorSummary(result)}\n`);
+    process.stdout.write(flags.json ? `${JSON.stringify(redactValue(result), null, 2)}\n` : `${formatAuthorSummary(result)}\n`);
     if (result.status !== "COMPLETED") process.exitCode = 1;
     return;
   }

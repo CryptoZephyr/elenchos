@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseKaneBalance, parseKaneIdentity, parseKaneResult } from "../src/kane.mjs";
+import { parseKaneBalance, parseKaneIdentity, parseKaneResult, runKaneTest } from "../src/kane.mjs";
 import { normalizeVerificationStatus } from "../src/domain.mjs";
 
 test("normalizes Kane status values", () => {
@@ -33,6 +33,73 @@ test("separates Kane authentication from available credits", () => {
   assert.equal(balance.total, 11200);
 });
 
+test("does not infer Kane authentication or credits from empty successful output", () => {
+  const empty = { exitCode: 0, timedOut: false, stdout: "", stderr: "" };
+  const identity = parseKaneIdentity(empty);
+  const balance = parseKaneBalance(empty);
+  assert.equal(identity.authenticated, false);
+  assert.equal(identity.status, "needs_authentication");
+  assert.equal(balance.status, "unavailable");
+  assert.equal(balance.available, null);
+});
+
+test("recognizes authenticated Kane identity output rendered in a table", () => {
+  const identity = parseKaneIdentity({
+    exitCode: 0,
+    timedOut: false,
+    stdout: [
+      "│  ✓ Authenticated                     │",
+      "│  Profile       default               │",
+      "│  Environment   prod                  │",
+      "│  Method        oauth                 │",
+      "│  Token         valid                 │",
+    ].join("\n"),
+    stderr: "",
+  });
+  assert.equal(identity.authenticated, true);
+  assert.equal(identity.profile, "default");
+  assert.equal(identity.environment, "prod");
+});
+
+test("reports a successful zero-credit response as depleted", () => {
+  const balance = parseKaneBalance({
+    exitCode: 0,
+    timedOut: false,
+    stdout: "Available credits: 0\nTotal credits: 10000\n",
+    stderr: "",
+  });
+  assert.equal(balance.status, "depleted");
+  assert.equal(balance.available, 0);
+});
+
+test("rejects a Kane result when process output exceeds the capture limit", async () => {
+  const root = mkdtempSync(join(tmpdir(), "elenchos-kane-output-limit-"));
+  const script = join(root, "kane-fixture.js");
+  const testFile = join(root, "proof_test.md");
+  try {
+    writeFileSync(testFile, "# proof\n", "utf8");
+    writeFileSync(script, [
+      "const events = [",
+      "  { type: 'test_md_step_start', step_index: 1, description: 'AC-001 proof' },",
+      "  { type: 'test_md_step_end', step_index: 1, description: 'AC-001 proof', status: 'PASS' },",
+      "  { type: 'test_md_summary', overall_status: 'PASS' },",
+      "  { type: 'test_md_done', overall_status: 'PASS' },",
+      "];",
+      "process.stdout.write(events.map(JSON.stringify).join('\\n') + '\\n' + 'x'.repeat(8192));",
+    ].join("\n"), "utf8");
+    const result = await runKaneTest({
+      testFile,
+      cwd: root,
+      criteria: [{ id: "AC-001", description: "proof" }],
+      config: { command: script, maxOutputBytes: 1024, timeoutSeconds: 2 },
+    });
+    assert.equal(result.status, "VERIFIER_ERROR");
+    assert.match(result.error, /output exceeded/i);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("parses machine-readable Kane output without trusting agent narration", () => {
   const result = parseKaneResult({
     stdout: '{"type":"run_finished","status":"passed","session_id":"session-1"}\n',
@@ -41,7 +108,7 @@ test("parses machine-readable Kane output without trusting agent narration", () 
     resultMarkdownPath: "C:/path/that/does/not/exist/Result.md",
     criteria: [{ id: "AC-001", description: "The page loads" }],
   });
-  assert.equal(result.status, "PASS");
+  assert.equal(result.status, "INCONCLUSIVE");
   assert.equal(result.sessionId, "session-1");
   assert.equal(result.criteria[0].status, "UNVERIFIED");
 });
@@ -198,7 +265,7 @@ test("treats an unconfirmed timed-out application verdict as verifier error", ()
   assert.equal(result.criteria[0].status, "UNVERIFIED");
 });
 
-test("does not promote unmapped criteria from an overall pass", () => {
+test("rejects an overall pass when declared criteria remain unmapped", () => {
   const result = parseKaneResult({
     stdout: [
       JSON.stringify({ type: "test_md_step_start", step_index: 1, heading: "Open the page" }),
@@ -210,7 +277,7 @@ test("does not promote unmapped criteria from an overall pass", () => {
     resultMarkdownPath: "C:/missing/Result.md",
     criteria: [{ id: "AC-001", description: "The page loads" }],
   });
-  assert.equal(result.status, "PASS");
+  assert.equal(result.status, "INCONCLUSIVE");
   assert.equal(result.criteria[0].status, "UNVERIFIED");
 });
 

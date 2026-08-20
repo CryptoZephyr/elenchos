@@ -48,6 +48,20 @@ function waitForInterval(ms, signal) {
   });
 }
 
+async function readinessFetch(url, timeoutMs, signal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timer = setTimeout(abort, Math.max(1, timeoutMs));
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  try {
+    return await fetch(url, { redirect: "error", signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
 async function waitForReady(url, timeoutMs, child, signal) {
   const deadline = Date.now() + timeoutMs;
   let lastError = "No response yet";
@@ -55,13 +69,15 @@ async function waitForReady(url, timeoutMs, child, signal) {
     if (signal?.aborted) throw new Error("Application startup cancelled");
     if (child.exitCode !== null) throw new Error(`Application exited with code ${child.exitCode}`);
     try {
-      const response = await fetch(url, { redirect: "error" });
+      const response = await readinessFetch(url, deadline - Date.now(), signal);
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
       lastError = error.message;
     }
-    await waitForInterval(250, signal);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    await waitForInterval(Math.min(250, remaining), signal);
   }
   if (signal?.aborted) throw new Error("Application startup cancelled");
   throw new Error(`Application did not become ready at ${url}: ${lastError}`);

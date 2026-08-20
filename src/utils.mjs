@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
@@ -21,9 +21,6 @@ export function repositoryPath(root, requested) {
 
   const rootAbsolute = resolve(root);
   const absolute = resolve(rootAbsolute, requested);
-  if (!isWithin(rootAbsolute, absolute)) {
-    throw new Error("The requested path must stay inside the configured repository");
-  }
 
   let realRoot;
   try {
@@ -32,17 +29,19 @@ export function repositoryPath(root, requested) {
     throw new Error("The configured repository does not exist");
   }
 
+  if (!isWithin(rootAbsolute, absolute) && !(isAbsolute(requested) && isWithin(realRoot, absolute))) {
+    throw new Error("The requested path must stay inside the configured repository");
+  }
+
   let probe = absolute;
   while (true) {
     try {
-      const stat = lstatSync(probe);
-      if (stat.isSymbolicLink()) {
-        const realProbe = realpathSync(probe);
-        if (!isWithin(realRoot, realProbe)) {
-          throw new Error("The requested path must stay inside the configured repository");
-        }
+      const realProbe = realpathSync(probe);
+      const canonical = resolve(realProbe, relative(probe, absolute));
+      if (!isWithin(realRoot, canonical)) {
+        throw new Error("The requested path must stay inside the configured repository");
       }
-      if (probe === absolute) break;
+      return canonical;
     } catch (error) {
       if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
     }
@@ -51,17 +50,7 @@ export function repositoryPath(root, requested) {
     if (parent === probe) break;
     probe = parent;
   }
-
-  try {
-    const realAbsolute = realpathSync(absolute);
-    if (!isWithin(realRoot, realAbsolute)) {
-      throw new Error("The requested path must stay inside the configured repository");
-    }
-  } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-  }
-
-  return absolute;
+  throw new Error("The configured repository does not exist");
 }
 
 export function ensureDirectory(path) {
@@ -94,6 +83,7 @@ export function sha256(value) {
 
 export function redactValue(value, key = "") {
   if (isSensitiveKey(key)) return "[REDACTED]";
+  if (typeof value === "string") return redactText(value);
   if (Array.isArray(value)) return value.map((item) => redactValue(item));
   if (!value || typeof value !== "object") return value;
 

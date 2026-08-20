@@ -31,6 +31,7 @@ function fileMaterial(path) {
 export function captureRepositoryState(cwd) {
   const root = resolve(git(cwd, ["rev-parse", "--show-toplevel"]).stdout.trim());
   const head = git(root, ["rev-parse", "HEAD"]).stdout.trim();
+  const treeHash = git(root, ["rev-parse", "HEAD^{tree}"]).stdout.trim();
   const status = git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout;
   const files = changedPaths(status);
   const diff = git(root, ["diff", "--binary", "HEAD"]).stdout;
@@ -44,6 +45,7 @@ export function captureRepositoryState(cwd) {
   return {
     root,
     head,
+    treeHash,
     dirty: Boolean(status),
     changedFiles: files,
     diffHash: sha256(Buffer.concat(material.map((item) => Buffer.isBuffer(item) ? item : Buffer.from(String(item))))),
@@ -54,16 +56,23 @@ export function sameRepositoryState(before, after) {
   return before.head === after.head && before.diffHash === after.diffHash;
 }
 
-export function writeWorkspaceEvidence({ cwd, directory }) {
+export function sameRepositoryContent(before, after) {
+  return before.treeHash === after.treeHash && before.diffHash === after.diffHash;
+}
+
+export function writeWorkspaceEvidence({ cwd, directory, baselineHead = null }) {
   const state = captureRepositoryState(cwd);
+  const diffBase = baselineHead ?? state.head;
   const evidenceDirectory = join(directory, "workspace-evidence");
   const filesDirectory = join(evidenceDirectory, "files");
   mkdirSync(filesDirectory, { recursive: true });
   const patchPath = join(evidenceDirectory, "changes.patch");
-  writeFileSync(patchPath, git(state.root, ["diff", "--binary", "HEAD"]).stdout, "utf8");
+  writeFileSync(patchPath, git(state.root, ["diff", "--binary", diffBase]).stdout, "utf8");
 
+  const baselineFiles = git(state.root, ["diff", "--name-only", "-z", diffBase]).stdout.split("\0").filter(Boolean);
+  const changedFiles = [...new Set([...baselineFiles, ...state.changedFiles])];
   const files = [];
-  for (const path of state.changedFiles) {
+  for (const path of changedFiles) {
     const source = repositoryPath(state.root, path);
     if (!existsSync(source)) {
       files.push({ path, kind: "deleted" });
@@ -80,7 +89,7 @@ export function writeWorkspaceEvidence({ cwd, directory }) {
     files.push({ path, kind: "file" });
   }
   const manifestPath = join(evidenceDirectory, "manifest.json");
-  writeJson(manifestPath, { state, files });
+  writeJson(manifestPath, { baselineHead: diffBase, state, files });
   return { directory: evidenceDirectory, patchPath, manifestPath };
 }
 

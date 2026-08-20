@@ -44,5 +44,10 @@ export function formatRunSummary(run) {
 }
 
 export function printRunSummary(run, { json = false } = {}) {
-  process.stdout.write(json ? `${JSON.stringify(run, null, 2)}\n` : `${formatRunSummary(run)}\n`);
+  process.stdout.write(json ? `${formatRunJson(run)}\n` : `${formatRunSummary(run)}\n`);
 }
+
+export function formatRunJson(run) {
+  return JSON.stringify(redactValue(run), null, 2);
+}
+import { redactValue } from "./utils.mjs";

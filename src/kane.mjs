@@ -32,7 +32,7 @@ function commandOutput(result) {
 }
 
 function fieldFromOutput(output, label) {
-  return output.match(new RegExp(`^\\s*${label}\\s+(.+?)\\s*$`, "im"))?.[1]?.trim() ?? null;
+  return output.match(new RegExp(`^\\s*(?:│\\s*)?${label}\\s+(.+?)\\s*(?:│)?\\s*$`, "im"))?.[1]?.trim() ?? null;
 }
 
 function creditFromOutput(output, label) {
@@ -45,11 +45,12 @@ function creditFromOutput(output, label) {
 export function parseKaneIdentity(result) {
   const output = commandOutput(result);
   const unauthenticated = /not authenticated|token expired|credentials rejected|re-login|login required/i.test(output);
-  const authenticated = result.exitCode === 0 && !result.timedOut && !unauthenticated;
+  const profile = fieldFromOutput(output, "Profile");
+  const authenticated = result.exitCode === 0 && !result.timedOut && !result.error && !unauthenticated && Boolean(profile);
   return {
     status: authenticated ? "authenticated" : "needs_authentication",
     authenticated,
-    profile: fieldFromOutput(output, "Profile"),
+    profile,
     environment: fieldFromOutput(output, "Environment"),
     method: fieldFromOutput(output, "Method"),
     expires: fieldFromOutput(output, "Expires"),
@@ -60,7 +61,8 @@ export function parseKaneBalance(result) {
   const output = commandOutput(result);
   const available = creditFromOutput(output, "Available credits:");
   const total = creditFromOutput(output, "Total credits:");
-  const availableStatus = result.exitCode === 0 && !result.timedOut ? "available" : "unavailable";
+  const successful = result.exitCode === 0 && !result.timedOut && !result.error && available !== null;
+  const availableStatus = successful ? (available > 0 ? "available" : "depleted") : "unavailable";
   return {
     status: availableStatus,
     available,
@@ -275,7 +277,9 @@ export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, ca
   const bugVerdict = bugVerdictFromEvents(events);
   const eventStatus = statusFromEvents(events, { exitCode, timedOut, cancelled, requireTestMd });
   const status = eventStatus;
-  const normalizedStatus = isVerifierFailure(bugVerdict)
+  const normalizedStatus = processError
+    ? "VERIFIER_ERROR"
+    : isVerifierFailure(bugVerdict)
     ? "VERIFIER_ERROR"
     : status === "INCONCLUSIVE" && (exitCode !== 0 || timedOut)
       ? "VERIFIER_ERROR"
@@ -287,21 +291,27 @@ export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, ca
   const currentMarkdown = markdown?.sessionId && sessionId && markdown.sessionId === sessionId ? markdown : null;
   const execution = summarizeExecution(events);
   const evidence = { ...evidenceHint(stderr), screenshotPath: terminal?.screenshot_path ?? null };
+  const mappedCriteria = mapCriteria(criteria, normalizedStatus, currentMarkdown?.steps ?? [], events, terminal);
+  const resultStatus = normalizedStatus === "PASS"
+    && mappedCriteria.some((criterion) => criterion.status !== "PASS")
+    ? "INCONCLUSIVE"
+    : normalizedStatus;
+  const safeText = (value) => value == null ? null : redactText(value);
   return {
-    status: normalizedStatus,
+    status: resultStatus,
     exitCode,
     cancelled,
     sessionId,
-    criteria: mapCriteria(criteria, normalizedStatus, currentMarkdown?.steps ?? [], events, terminal),
+    criteria: mappedCriteria,
     events: redactValue(events),
-    summary: terminal?.summary || bugVerdict?.root_cause || bugVerdict?.one_liner || null,
-    oneLiner: terminal?.one_liner || bugVerdict?.one_liner || null,
-    reason: terminal?.reason ?? summary?.overall_status ?? null,
+    summary: safeText(terminal?.summary || bugVerdict?.root_cause || bugVerdict?.one_liner),
+    oneLiner: safeText(terminal?.one_liner || bugVerdict?.one_liner),
+    reason: safeText(terminal?.reason ?? summary?.overall_status),
     finalState: redactValue(terminal?.final_state ?? null),
     credits: terminal?.credits_consumed ?? terminal?.credits ?? null,
     duration: terminal?.duration ?? summary?.duration_s ?? null,
-    testUrl: terminal?.test_url ?? null,
-    finalUrl: terminal?.final_url ?? terminal?.url ?? null,
+    testUrl: safeText(terminal?.test_url),
+    finalUrl: safeText(terminal?.final_url ?? terminal?.url),
     screenshotPath: terminal?.screenshot_path ?? null,
     bugVerdict: redactValue(bugVerdict),
     stepsTaken: execution.stepsTaken,
@@ -351,6 +361,7 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     env: { KANE_CLI_USER_AGENT: "elenchos", ...(config.env ?? {}) },
     timeoutMs: ((config.timeoutSeconds ?? 120) + 30) * 1000,
     signal,
+    maxOutputBytes: config.maxOutputBytes,
   });
   const stem = basename(testFile).replace(/_test\.md$/i, "");
   const resultMarkdownPath = join(dirname(testFile), `output-${stem}`, "Result.md");

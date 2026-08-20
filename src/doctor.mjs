@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,12 +12,14 @@ import { VERSION } from "./version.mjs";
 const MCP_VERSION = VERSION;
 
 function relativePath(root, path) {
-  return relative(root, path) || ".";
+  return relative(realpathSync(root), path) || ".";
 }
 
 function safeError(error, root) {
   const message = trimForLog(error instanceof Error ? error.message : String(error), 1000);
-  return message.split(resolve(root)).join("<repository>");
+  return message
+    .split(resolve(root)).join("<repository>")
+    .split(realpathSync(root)).join("<repository>");
 }
 
 function applicationSnapshot(config) {

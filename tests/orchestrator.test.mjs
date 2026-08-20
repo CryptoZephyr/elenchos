@@ -66,6 +66,8 @@ test("runs a product failure through repair and pass, then preserves evidence an
         runKaneTest: async () => verification(kaneCalls++ === 0 ? "FAIL" : "PASS"),
         runAgent: async ({ cwd }) => {
           writeFileSync(join(cwd, "app.txt"), "fixed\n", "utf8");
+          git(cwd, "add", "app.txt");
+          git(cwd, "commit", "-m", "agent repair");
           return { provider: "fake", exitCode: 0, stdout: "fixed", stderr: "" };
         },
       },
@@ -76,6 +78,53 @@ test("runs a product failure through repair and pass, then preserves evidence an
     assert.equal(existsSync(result.run.repository.workspace), false);
     assert.match(readFileSync(result.run.workspaceEvidence.patchPath, "utf8"), /fixed/);
     assert.equal(readFileSync(join(result.run.workspaceEvidence.directory, "files", "app.txt"), "utf8"), "fixed\n");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("does not verify an overall pass with unmapped acceptance criteria", async () => {
+  const fixture = repository();
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config({ maxRepairAttempts: 0 }),
+      cwd: fixture.root,
+      mode: "verify",
+      services: {
+        startApplication: async () => application(),
+        runKaneTest: async () => ({
+          ...verification("PASS"),
+          criteria: [{ id: "AC-001", description: "The demo works", status: "UNVERIFIED" }],
+        }),
+      },
+    });
+    assert.equal(result.run.status, "ERROR");
+    assert.match(result.run.error, /did not verify every acceptance criterion/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an empty repair commit that leaves implementation content unchanged", async () => {
+  const fixture = repository();
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config(),
+      cwd: fixture.root,
+      mode: "run",
+      services: {
+        startApplication: async () => application(),
+        runKaneTest: async () => verification("FAIL"),
+        runAgent: async ({ cwd }) => {
+          git(cwd, "commit", "--allow-empty", "-m", "empty repair");
+          return { provider: "fake", exitCode: 0, stdout: "done", stderr: "" };
+        },
+      },
+    });
+    assert.equal(result.run.status, "ERROR");
+    assert.match(result.run.error, /did not change the implementation/);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

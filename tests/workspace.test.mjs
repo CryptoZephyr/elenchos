@@ -57,3 +57,29 @@ test("repository identity includes HEAD as well as content changes", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("captures committed agent changes against the original baseline", () => {
+  const root = mkdtempSync(join(tmpdir(), "elenchos-committed-evidence-"));
+  try {
+    git(root, "init");
+    git(root, "config", "user.name", "Elenchos Test");
+    git(root, "config", "user.email", "test@elenchos.local");
+    writeFileSync(join(root, "app.txt"), "baseline\n", "utf8");
+    git(root, "add", "app.txt");
+    git(root, "commit", "-m", "baseline");
+    const baselineHead = git(root, "rev-parse", "HEAD").trim();
+    writeFileSync(join(root, "app.txt"), "committed repair\n", "utf8");
+    git(root, "add", "app.txt");
+    git(root, "commit", "-m", "agent repair");
+
+    const evidence = writeWorkspaceEvidence({
+      cwd: root,
+      directory: join(root, ".elenchos", "evidence"),
+      baselineHead,
+    });
+    assert.match(readFileSync(evidence.patchPath, "utf8"), /committed repair/);
+    assert.equal(readFileSync(join(evidence.directory, "files", "app.txt"), "utf8"), "committed repair\n");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
