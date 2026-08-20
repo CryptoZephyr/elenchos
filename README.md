@@ -20,6 +20,17 @@ Coding agents can say a task is done without proving the user flow works. Elench
 - An authenticated [Kane CLI](https://www.testmu.ai/kane-ai)
 - A supported coding-agent CLI. The included example uses AGY with Gemini
 
+## Install
+
+Install the published CLI from npm:
+
+```bash
+npm install -g elenchos
+elenchos --help
+```
+
+Run `elenchos init` inside the repository you want to verify. It creates an ignored local configuration and checks whether Kane is installed and authenticated.
+
 Install Kane and sign in before running Elenchos:
 
 ```bash
