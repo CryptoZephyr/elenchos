@@ -23,7 +23,7 @@ test("parses machine-readable Kane output without trusting agent narration", () 
   });
   assert.equal(result.status, "PASS");
   assert.equal(result.sessionId, "session-1");
-  assert.equal(result.criteria[0].status, "PASS");
+  assert.equal(result.criteria[0].status, "UNVERIFIED");
 });
 
 test("classifies a non-zero Kane process without a result as verifier error", () => {
@@ -58,7 +58,7 @@ test("does not promote an inner test step pass to an overall test pass", () => {
     ],
   });
   assert.equal(result.status, "FAIL");
-  assert.deepEqual(result.criteria.map((criterion) => criterion.status), ["PASS", "FAIL", "UNVERIFIED"]);
+  assert.deepEqual(result.criteria.map((criterion) => criterion.status), ["UNVERIFIED", "FAIL", "UNVERIFIED"]);
 });
 
 test("classifies a timed-out partial test as verifier error", () => {
@@ -137,6 +137,69 @@ test("rejects an incomplete testmd flow even when its inner run passed", () => {
     ].join("\n"),
     stderr: "",
     exitCode: 0,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The page loads" }],
+  });
+  assert.equal(result.status, "VERIFIER_ERROR");
+});
+
+test("does not let an inner run pass override a failed testmd terminal event", () => {
+  const result = parseKaneResult({
+    stdout: [
+      JSON.stringify({ type: "test_md_step_start", step_index: 1, heading: "AC-001 Page loads" }),
+      JSON.stringify({ type: "test_md_step_end", step_index: 1, status: "failed" }),
+      JSON.stringify({ type: "test_md_done", status: "failed" }),
+      JSON.stringify({ type: "run_end", status: "passed", session_id: "session-2" }),
+    ].join("\n"),
+    stderr: "",
+    exitCode: 0,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The page loads" }],
+  });
+  assert.equal(result.status, "FAIL");
+  assert.equal(result.criteria[0].status, "FAIL");
+});
+
+test("treats an unconfirmed timed-out application verdict as verifier error", () => {
+  const result = parseKaneResult({
+    stdout: [
+      JSON.stringify({ type: "test_md_step_start", step_index: 1, heading: "AC-001 Page loads" }),
+      JSON.stringify({ type: "test_md_step_end", step_index: 1, status: "failed" }),
+      JSON.stringify({ type: "test_md_done", status: "failed" }),
+      JSON.stringify({ type: "run_end", status: "failed", verdict: { confirmed: false, family: "application_issue" } }),
+    ].join("\n"),
+    stderr: "",
+    exitCode: 1,
+    timedOut: true,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The page loads" }],
+  });
+  assert.equal(result.status, "VERIFIER_ERROR");
+  assert.equal(result.criteria[0].status, "UNVERIFIED");
+});
+
+test("does not promote unmapped criteria from an overall pass", () => {
+  const result = parseKaneResult({
+    stdout: [
+      JSON.stringify({ type: "test_md_step_start", step_index: 1, heading: "Open the page" }),
+      JSON.stringify({ type: "test_md_step_end", step_index: 1, status: "passed" }),
+      JSON.stringify({ type: "test_md_done", status: "passed" }),
+    ].join("\n"),
+    stderr: "",
+    exitCode: 0,
+    resultMarkdownPath: "C:/missing/Result.md",
+    criteria: [{ id: "AC-001", description: "The page loads" }],
+  });
+  assert.equal(result.status, "PASS");
+  assert.equal(result.criteria[0].status, "UNVERIFIED");
+});
+
+test("requires a complete testmd flow when parsing testmd execution", () => {
+  const result = parseKaneResult({
+    stdout: JSON.stringify({ type: "run_finished", status: "passed", session_id: "inner-run" }),
+    stderr: "",
+    exitCode: 0,
+    requireTestMd: true,
     resultMarkdownPath: "C:/missing/Result.md",
     criteria: [{ id: "AC-001", description: "The page loads" }],
   });

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, isAbsolute, resolve } from "node:path";
 
-const sensitiveKey = /^(?:password|passphrase|token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|authorization|cookie|private[_-]?key|seed|mnemonic)$/i;
+const sensitiveKey = /^(?:password|passphrase|token|secret|credential|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|authorization|cookie|private[_-]?key|seed|mnemonic)$/i;
 
 export function ensureDirectory(path) {
   mkdirSync(path, { recursive: true });
@@ -58,8 +58,8 @@ export function redactText(value) {
       try { return JSON.stringify(redactValue(JSON.parse(line))); } catch { /* Continue with text redaction. */ }
     }
     return line
-      .replace(/(authorization\s*:\s*bearer\s+)[^\s]+/gi, "$1[REDACTED]")
-      .replace(/((?:password|passphrase|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|private[_-]?key|mnemonic)\s*[:=]\s*)[^\s,;]+/gi, "$1[REDACTED]");
+      .replace(/(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, "$1[REDACTED]")
+      .replace(/((?:password|passphrase|token|secret|credential|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|private[_-]?key|mnemonic)\s*[:=]\s*)[^\s,;&]+/gi, "$1[REDACTED]");
   });
   return redactedLines.join("\n");
 }

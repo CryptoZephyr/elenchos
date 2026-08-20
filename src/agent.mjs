@@ -59,7 +59,7 @@ function structuredAgentFailure(stdout) {
       if (parsed.is_error === true || ["ERROR", "FAILED", "FAILURE"].includes(status)) {
         return parsed.error || parsed.message || `Agent reported ${status || "an error"}`;
       }
-      return null;
+      if (["SUCCESS", "SUCCEEDED", "OK"].includes(status)) return null;
     } catch { /* Ignore non-JSON agent narration. */ }
   }
   return null;

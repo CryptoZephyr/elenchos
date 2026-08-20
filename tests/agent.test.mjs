@@ -10,3 +10,11 @@ test("rejects a structured agent error even when the process exits cleanly", () 
 test("accepts a structured successful agent result", () => {
   assert.equal(structuredAgentFailure(JSON.stringify({ status: "SUCCESS" })), null);
 });
+
+test("does not let unrelated trailing JSON hide an earlier agent error", () => {
+  const output = [
+    JSON.stringify({ status: "ERROR", message: "edit failed" }),
+    JSON.stringify({ usage: { tokens: 20 } }),
+  ].join("\n");
+  assert.equal(structuredAgentFailure(output), "edit failed");
+});

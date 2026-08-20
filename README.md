@@ -1,6 +1,6 @@
 # Elenchos
 
-Elenchos is a verification loop for AI coding agents. A coding agent builds or repairs a task in an isolated Git worktree. Kane CLI then checks the requested behavior in a real browser. Elenchos accepts the result only when the task, Kane test, and code revision stayed unchanged during verification.
+Elenchos is a verification loop for AI coding agents. A coding agent builds or repairs a task in a detached Git worktree. Kane CLI then checks the requested behavior in a real browser. Elenchos accepts the result only when the task, Kane test, Git HEAD, and working content stayed unchanged during verification.
 
 ```text
 task -> coding agent -> application -> Kane browser test
@@ -78,21 +78,27 @@ Each task has stable acceptance criteria and points to a Kane-authored `_test.md
 }
 ```
 
-Elenchos doesn't generate this test. Author it with Kane so the system that builds the code can't rewrite the success criteria.
+Elenchos doesn't generate this test. Author it with Kane so the system that builds the code can't rewrite the success criteria. Put each criterion ID in the matching Kane step heading, such as `AC-001 Page loads`. Elenchos leaves a criterion `UNVERIFIED` when structured Kane events don't identify it explicitly.
 
 ## Evidence and trust boundary
 
-Every run is stored under `.elenchos/runs/<run-id>`. Each attempt has separate application logs and Kane structured output. Sensitive fields are redacted before persistence.
+Every run is stored under `.elenchos/runs/<run-id>`. Each attempt has separate application logs and Kane structured output. Elenchos applies best-effort redaction to common credential fields and patterns before persistence.
 
 `PASS` means Kane completed the browser contract against one recorded code state. `FAIL` means Kane found a product failure. Browser, platform, timeout, incomplete output, and stale evidence are recorded as `VERIFIER_ERROR`.
 
-Local run data may still contain project details, so `.elenchos`, `.testmuai`, and Kane output folders are excluded from Git and npm packages.
+Local run data may still contain project details or secrets printed in unexpected formats, so `.elenchos`, `.testmuai`, and Kane output folders are excluded from Git and npm packages.
+
+After a run, Elenchos saves a binary Git patch, a changed-file snapshot, and a manifest under the run directory. Detached worktrees are then removed by default. Set `verification.retainWorkspace` to `true` when you need to inspect the live worktree.
+
+## Security boundary
+
+The worktree separates repository state. It does not sandbox the coding agent from your machine. The agent still inherits the permissions, filesystem access, credentials, and network access of its process. Run untrusted agents or repositories inside a container, virtual machine, or another operating-system sandbox.
 
 The sanitized [closed-loop evidence](EVIDENCE.md) records the verified demo run without publishing Kane session data.
 
 ## Configuration
 
-`elenchos init` writes `.elenchos/config.json` and checks whether Kane is installed and authenticated. [config.example.json](config.example.json) documents the supported fields without credentials or machine session data.
+`elenchos init` writes `.elenchos/config.json`, adds `.elenchos/` and `.testmuai/` to Git's local exclude file, and checks whether Kane is installed and authenticated. [config.example.json](config.example.json) documents the supported fields without credentials or machine session data.
 
 The `repository` field selects the target repository. Agent arguments use `{{prompt}}` as the prompt placeholder. `KANE_CLI_PATH` can point to the installed Kane entry file when the command shim isn't on `PATH`.
 

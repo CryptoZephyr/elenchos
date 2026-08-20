@@ -26,6 +26,7 @@
   "verification": {
     "maxRepairAttempts": 2,
     "verifyBeforeImplement": false,
+    "retainWorkspace": false,
     "timeoutSeconds": 120,
     "headless": true
   }

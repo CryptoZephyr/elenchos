@@ -7,6 +7,7 @@ export function formatRunSummary(run) {
     `Attempts: ${run.attempts.length}`,
   ];
   if (run.repository) lines.push(`Workspace: ${run.repository.kind} at ${run.repository.workspace}`);
+  if (run.repository?.cleanedUp) lines.push("Workspace cleaned after evidence capture");
   if (run.verificationContractHash) lines.push(`Contract: ${run.verificationContractHash.slice(0, 12)}`);
   for (const attempt of run.attempts) {
     lines.push(`  Attempt ${attempt.number}: ${attempt.verification.status}`);
@@ -19,6 +20,7 @@ export function formatRunSummary(run) {
     if (run.verifiedRevision.changedFiles.length) lines.push(`Verified changes: ${run.verifiedRevision.changedFiles.join(", ")}`);
   }
   if (run.error) lines.push(`Error: ${run.error}`);
+  if (run.cleanupError) lines.push(`Cleanup error: ${run.cleanupError}`);
   return lines.join("\n");
 }
 

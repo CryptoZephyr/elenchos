@@ -1,6 +1,6 @@
 # Elenchos submission notes
 
-Elenchos gives AI coding agents an independent definition of done. It runs the builder in an isolated Git worktree, locks the task and Kane-authored browser contract, and records a code revision for each attempt. Kane CLI provides the structured browser evidence. A confirmed product failure returns to the agent for a bounded repair, then the same contract runs again. The included proof shows that full failure-to-repair-to-pass loop.
+Elenchos gives AI coding agents an independent definition of done. It separates repository state with a detached Git worktree, locks the task and Kane-authored browser contract, and records a code revision for each attempt. Kane CLI provides the structured browser evidence. A confirmed product failure returns to the agent for a bounded repair, then the same contract runs again. The included proof shows that full failure-to-repair-to-pass loop.
 
 ## Run command
 

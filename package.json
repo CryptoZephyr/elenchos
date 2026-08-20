@@ -1,7 +1,7 @@
 {
   "name": "elenchos",
-  "version": "0.1.0",
-  "description": "Independent verification infrastructure for AI coding agents",
+  "version": "0.1.1",
+  "description": "Kane-backed verification loop for AI coding agents",
   "type": "module",
   "bin": {
     "elenchos": "src/cli.mjs"

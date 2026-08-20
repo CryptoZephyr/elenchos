@@ -80,45 +80,47 @@ function readResultMarkdown(path) {
   return { status, sessionId, started, steps, markdown: trimForLog(text, 24000) };
 }
 
-function statusFromEvents(events, { exitCode, timedOut } = {}) {
+function statusFromEvents(events, { exitCode, timedOut, requireTestMd = false } = {}) {
   if (events.length === 0) return "VERIFIER_ERROR";
   const bugVerdict = bugVerdictFromEvents(events);
-  const hasProductVerdict = bugVerdict && !isVerifierFailure(bugVerdict);
+  const hasConfirmedProductVerdict = isConfirmedProductVerdict(bugVerdict);
   const hasTestMdEvents = events.some((event) => String(event.type ?? "").startsWith("test_md_"));
-  const testMdDone = events.filter((event) => event.type === "test_md_done").at(-1);
-  if (hasTestMdEvents && !testMdDone && !hasProductVerdict) return "VERIFIER_ERROR";
-  const testMdStepEnds = events.filter((event) => event.type === "test_md_step_end");
-  const testMdStatuses = testMdStepEnds.map((event) => normalizeVerificationStatus(event.status));
-  if (testMdStatuses.includes("FAIL")) {
-    return timedOut && !hasProductVerdict ? "VERIFIER_ERROR" : "FAIL";
+  if (requireTestMd && !hasTestMdEvents) return "VERIFIER_ERROR";
+  const hasErrorEvent = events.some((event) => event.type === "error");
+
+  if (hasTestMdEvents) {
+    const testMdDone = events.filter((event) => event.type === "test_md_done").at(-1);
+    const stepStatuses = events
+      .filter((event) => event.type === "test_md_step_end")
+      .map((event) => normalizeVerificationStatus(event.status));
+    const summary = events.filter((event) => event.type === "test_md_summary").at(-1);
+    const summaryStatus = normalizeVerificationStatus(summary?.overall_status ?? summary?.status);
+    const doneStatus = normalizeVerificationStatus(testMdDone?.overall_status ?? testMdDone?.status);
+    const hasExplicitFailure = stepStatuses.includes("FAIL") || summaryStatus === "FAIL" || doneStatus === "FAIL";
+
+    if (!testMdDone) {
+      return hasExplicitFailure && hasConfirmedProductVerdict ? "FAIL" : "VERIFIER_ERROR";
+    }
+    if (isVerifierFailure(bugVerdict) || stepStatuses.includes("VERIFIER_ERROR") || hasErrorEvent) {
+      return "VERIFIER_ERROR";
+    }
+    if (hasExplicitFailure) {
+      return timedOut && !hasConfirmedProductVerdict ? "VERIFIER_ERROR" : "FAIL";
+    }
+    if (timedOut || exitCode !== 0) return "VERIFIER_ERROR";
+    if (doneStatus !== "PASS") return "INCONCLUSIVE";
+    if (stepStatuses.some((status) => status !== "PASS")) return "INCONCLUSIVE";
+    return "PASS";
   }
 
-  const testMdSummary = events.filter((event) => event.type === "test_md_summary").at(-1);
-  const testMdSummaryStatus = normalizeVerificationStatus(testMdSummary?.overall_status);
-  if (testMdSummaryStatus === "FAIL") {
-    return timedOut && !hasProductVerdict ? "VERIFIER_ERROR" : "FAIL";
-  }
-
-  const runEnds = events.filter((event) => ["run_end", "run_finished"].includes(event.type));
-  const terminal = runEnds.at(-1);
+  const terminal = events.filter((event) => ["run_end", "run_finished"].includes(event.type)).at(-1);
   const terminalStatus = normalizeVerificationStatus(terminal?.status);
+  if (isVerifierFailure(bugVerdict) || hasErrorEvent) return "VERIFIER_ERROR";
   if (terminalStatus === "FAIL") {
-    return timedOut && !hasProductVerdict ? "VERIFIER_ERROR" : "FAIL";
+    return timedOut && !hasConfirmedProductVerdict ? "VERIFIER_ERROR" : "FAIL";
   }
-
-  if (timedOut) return "VERIFIER_ERROR";
-
-  if (testMdStepEnds.length > 0) {
-    if (testMdStatuses.includes("VERIFIER_ERROR")) return "VERIFIER_ERROR";
-    if (testMdStatuses.every((status) => status === "PASS") && exitCode === 0) return "PASS";
-    return exitCode !== 0 ? "VERIFIER_ERROR" : "INCONCLUSIVE";
-  }
-
-  if (terminal) {
-    if (terminalStatus !== "INCONCLUSIVE") return terminalStatus;
-  }
-  if (events.some((event) => event.type === "error")) return "VERIFIER_ERROR";
-  return exitCode !== 0 ? "VERIFIER_ERROR" : "INCONCLUSIVE";
+  if (timedOut || exitCode !== 0) return "VERIFIER_ERROR";
+  return terminalStatus;
 }
 
 function bugVerdictFromEvents(events) {
@@ -135,36 +137,44 @@ function isVerifierFailure(verdict) {
     || ["environment_issue", "platform_failure", "infrastructure_error", "verifier_error"].includes(category);
 }
 
-function mapCriteria(criteria, overall, steps = [], events = []) {
-  const testMdStepEnds = events.filter((event) => event.type === "test_md_step_end");
-  const hasTestMdSteps = testMdStepEnds.length > 0 || events.some((event) => event.type === "test_md_step_start");
-  const canMapRootSteps = testMdStepEnds.length === criteria.length
-    || (testMdStepEnds.length > 1 && testMdStepEnds.length < criteria.length);
+function isConfirmedProductVerdict(verdict) {
+  return Boolean(verdict) && verdict.confirmed === true && !isVerifierFailure(verdict);
+}
 
-  return criteria.map((criterion, index) => {
+function mapCriteria(criteria, overall, steps = [], events = []) {
+  const starts = events.filter((event) => event.type === "test_md_step_start");
+  const ends = events.filter((event) => event.type === "test_md_step_end");
+
+  function eventText(event) {
+    return [event?.heading, event?.title, event?.name, event?.description]
+      .filter((value) => typeof value === "string")
+      .join(" ");
+  }
+
+  return criteria.map((criterion) => {
     const markdownStep = steps.find((item) => item.description.includes(criterion.id));
-    const rootStep = canMapRootSteps ? testMdStepEnds.find((event) => {
-      const stepIndex = event.step_index ?? event.stepIndex;
-      return stepIndex === index + 1;
-    }) : null;
+    const start = starts.find((event) => eventText(event).includes(criterion.id));
+    const explicitEnd = ends.find((event) => eventText(event).includes(criterion.id));
+    const startIndex = start?.step_index ?? start?.stepIndex;
+    const rootStep = explicitEnd ?? (startIndex == null ? null : ends.find((event) => {
+      return (event.step_index ?? event.stepIndex) === startIndex;
+    }));
     let status = "UNVERIFIED";
     if (rootStep) {
       const normalized = normalizeVerificationStatus(rootStep.status);
       if (normalized === "PASS") status = "PASS";
       else if (normalized === "FAIL" && overall !== "VERIFIER_ERROR") status = "FAIL";
-    } else if (!events.length && markdownStep?.marker === "✓") status = "PASS";
-    else if (!events.length && markdownStep?.marker === "✗") status = "FAIL";
-    else if (overall === "PASS") status = "PASS";
-    else if (overall === "FAIL" && !hasTestMdSteps) status = "FAIL";
+    } else if (markdownStep?.marker === "✓") status = "PASS";
+    else if (markdownStep?.marker === "✗" && overall !== "VERIFIER_ERROR") status = "FAIL";
     return { ...criterion, status };
   });
 }
 
-export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, resultMarkdownPath, criteria = [] }) {
+export function parseKaneResult({ stdout, stderr, exitCode, timedOut = false, resultMarkdownPath, criteria = [], requireTestMd = false }) {
   const events = parseJsonLines(stdout);
   const markdown = readResultMarkdown(resultMarkdownPath);
   const bugVerdict = bugVerdictFromEvents(events);
-  const eventStatus = statusFromEvents(events, { exitCode, timedOut });
+  const eventStatus = statusFromEvents(events, { exitCode, timedOut, requireTestMd });
   const status = eventStatus;
   const normalizedStatus = isVerifierFailure(bugVerdict)
     ? "VERIFIER_ERROR"
@@ -240,6 +250,7 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     timedOut: result.timedOut,
     resultMarkdownPath,
     criteria,
+    requireTestMd: true,
   });
   return {
     ...parsed,

@@ -7,7 +7,7 @@ import { transitionRun, createRun } from "./domain.mjs";
 import { runKaneTest } from "./kane.mjs";
 import { createRunPersistence } from "./persistence.mjs";
 import { nowIso } from "./utils.mjs";
-import { captureRepositoryState, prepareWorkspace } from "./workspace.mjs";
+import { captureRepositoryState, prepareWorkspace, removeWorkspace, sameRepositoryState, writeWorkspaceEvidence } from "./workspace.mjs";
 
 function saveTransition(run, persistence, next, detail) {
   transitionRun(run, next, detail);
@@ -22,7 +22,10 @@ function testPathFor(task, config, root) {
   return resolve(root, configured);
 }
 
-export async function executeRun({ task, config, cwd, mode = "run" }) {
+export async function executeRun({ task, config, cwd, mode = "run", services = {} }) {
+  const agentRunner = services.runAgent ?? runAgent;
+  const applicationStarter = services.startApplication ?? startApplication;
+  const kaneRunner = services.runKaneTest ?? runKaneTest;
   const run = createRun(task, config.agent?.provider ?? config.agent?.command ?? "none");
   const persistence = createRunPersistence(cwd, run.id);
   run.configPath = config.__path ?? null;
@@ -35,8 +38,9 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
   persistence.save(run);
 
   let application = null;
+  let workspace = null;
   try {
-    const workspace = prepareWorkspace({ cwd, runId: run.id, mode });
+    workspace = prepareWorkspace({ cwd, runId: run.id, mode });
     const executionCwd = workspace.cwd;
     run.repository = {
       kind: workspace.kind,
@@ -47,7 +51,7 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
 
     if (mode === "run" && config.verification?.verifyBeforeImplement !== true) {
       saveTransition(run, persistence, "IMPLEMENTING", "Send task to coding agent");
-      const implementation = await runAgent({
+      const implementation = await agentRunner({
         config: config.agent,
         prompt: buildImplementationPrompt(task, executionCwd),
         cwd: executionCwd,
@@ -70,13 +74,13 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
       assertVerificationContract(contract, task);
       const verificationRef = captureRepositoryState(executionCwd);
       saveTransition(run, persistence, "STARTING_APP", `Start application for verification attempt ${run.attempts.length + 1}`);
-      application = await startApplication({
+      application = await applicationStarter({
         config: config.application ?? {},
         cwd: executionCwd,
         logDirectory: attemptDirectory,
       });
       saveTransition(run, persistence, "VERIFYING", `Run Kane contract ${testFile}`);
-      const verification = await runKaneTest({
+      const verification = await kaneRunner({
         testFile,
         cwd: executionCwd,
         criteria: task.acceptanceCriteria,
@@ -85,7 +89,7 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
       });
       assertVerificationContract(contract, task);
       const verifiedRef = captureRepositoryState(executionCwd);
-      if (verifiedRef.diffHash !== verificationRef.diffHash) {
+      if (!sameRepositoryState(verificationRef, verifiedRef)) {
         throw new Error("Repository changed while Kane was verifying it. The result was rejected.");
       }
       const attempt = {
@@ -118,7 +122,7 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
       repairAttempt += 1;
       saveTransition(run, persistence, "REPAIRING", `Return Kane failure evidence to the coding agent, attempt ${repairAttempt}`);
       const beforeRepair = captureRepositoryState(executionCwd);
-      const repair = await runAgent({
+      const repair = await agentRunner({
         config: config.agent,
         prompt: buildRepairPrompt(task, verification, executionCwd, repairAttempt),
         cwd: executionCwd,
@@ -137,6 +141,16 @@ export async function executeRun({ task, config, cwd, mode = "run" }) {
     run.error = error instanceof Error ? error.message : String(error);
     if (!["VERIFIED", "FAILED", "ERROR"].includes(run.status)) saveTransition(run, persistence, "ERROR", run.error);
     else persistence.save(run);
+  } finally {
+    if (workspace?.kind === "git-worktree" && config.verification?.retainWorkspace !== true) {
+      try {
+        run.workspaceEvidence = writeWorkspaceEvidence({ cwd: workspace.cwd, directory: persistence.directory });
+        removeWorkspace({ root: workspace.baseline.root, workspace: workspace.cwd });
+        run.repository.cleanedUp = true;
+      } catch (error) {
+        run.cleanupError = error instanceof Error ? error.message : String(error);
+      }
+    }
   }
 
   run.completedAt ??= nowIso();

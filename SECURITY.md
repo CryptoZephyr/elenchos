@@ -13,3 +13,11 @@ You should receive an initial response within five business days. We may ask for
 ## Credential handling
 
 Elenchos doesn't need Kane or coding-agent credentials in its repository configuration. Authenticate each CLI through its own login flow. Keep tokens, session files, `.env` files, `.elenchos`, and `.testmuai` data out of source control.
+
+Redaction covers common credential keys and text patterns, but it can't guarantee removal of every secret an application or agent may print. Treat local run evidence as sensitive.
+
+## Threat boundary
+
+A detached Git worktree protects the verification contract from ordinary repository edits and gives each run a known code state. It does not restrict the coding agent's operating-system permissions. The agent can still access anything allowed by its process credentials, including files outside the worktree and the network.
+
+Use a separate container, virtual machine, or operating-system sandbox when running untrusted agents or repositories. Elenchos v0.1.x should not be treated as a credential or host-isolation boundary.
