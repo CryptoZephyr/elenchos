@@ -29,7 +29,7 @@
     "maxRepairAttempts": 2,
     "verifyBeforeImplement": false,
     "retainWorkspace": false,
-    "timeoutSeconds": 120,
+    "timeoutSeconds": 300,
     "headless": true
   }
 }

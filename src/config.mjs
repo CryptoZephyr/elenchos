@@ -53,7 +53,7 @@ export function detectProject(cwd) {
       command: kane.source === "PATH" || kane.source === "npx-fallback" ? undefined : kane.source,
       maxRepairAttempts: 2,
       verifyBeforeImplement: isDemoFixture,
-      timeoutSeconds: 120,
+      timeoutSeconds: 300,
       headless: true,
     },
     detected: {
