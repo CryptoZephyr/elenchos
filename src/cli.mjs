@@ -5,7 +5,7 @@ import { initProject, loadConfig } from "./config.mjs";
 import { loadTask } from "./task.mjs";
 import { executeRun } from "./orchestrator.mjs";
 import { printRunSummary } from "./report.mjs";
-import { readJson } from "./utils.mjs";
+import { readJson, repositoryPath } from "./utils.mjs";
 import { authorKaneTest, formatAuthorSummary } from "./author.mjs";
 import { startMcpServer } from "./mcp-server.mjs";
 import { createDoctorReport, formatDoctorReport } from "./doctor.mjs";
@@ -107,11 +107,12 @@ async function main() {
   if (command === "author") {
     const taskPath = positional[0];
     if (!taskPath) throw new Error("author requires a task JSON path");
-    const loadedConfig = existsSync(resolve(cwd, flags.config ?? ".elenchos/config.json"))
+    const configPath = repositoryPath(cwd, flags.config ?? ".elenchos/config.json");
+    const loadedConfig = existsSync(configPath)
       ? loadConfig(cwd, flags.config)
       : {};
-    const repositoryRoot = resolve(cwd, loadedConfig.repository ?? ".");
-    const task = loadTask(resolve(repositoryRoot, taskPath));
+    const repositoryRoot = repositoryPath(cwd, loadedConfig.repository ?? ".");
+    const task = loadTask(repositoryPath(repositoryRoot, taskPath));
     const outputPath = flags.output ?? task.verification?.testFile ?? `tests/${task.id}_test.md`;
     const result = await withAbortSignal((signal) => authorKaneTest({
       task,
@@ -131,7 +132,8 @@ async function main() {
   if (command === "status") {
     const runId = positional[0];
     if (!runId) throw new Error("status requires a run id");
-    const path = resolve(cwd, ".elenchos", "runs", runId, "run.json");
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(runId)) throw new Error("Invalid run id");
+    const path = repositoryPath(cwd, `.elenchos/runs/${runId}/run.json`);
     if (!existsSync(path)) throw new Error(`Run not found: ${path}`);
     const run = readJson(path);
     printRunSummary(run, { json: Boolean(flags.json) });
@@ -142,9 +144,9 @@ async function main() {
   const taskPath = positional[0];
   if (!taskPath) throw new Error(`${command} requires a task JSON path`);
   const loadedConfig = loadConfig(cwd, flags.config);
-  const repositoryRoot = resolve(cwd, loadedConfig.repository ?? ".");
+  const repositoryRoot = repositoryPath(cwd, loadedConfig.repository ?? ".");
   const config = { ...loadedConfig, __root: repositoryRoot };
-  const task = loadTask(resolve(repositoryRoot, taskPath));
+  const task = loadTask(repositoryPath(repositoryRoot, taskPath));
   const result = await withAbortSignal((signal) => executeRun({ task, config, cwd: repositoryRoot, mode: command, signal }));
   printRunSummary(result.run, { json: Boolean(flags.json) });
   if (result.run.status !== "VERIFIED") process.exitCode = 1;

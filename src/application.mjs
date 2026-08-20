@@ -10,6 +10,27 @@ function commandParts(start) {
   return { command: parts[0], args: parts.slice(1) };
 }
 
+function isLoopback(hostname) {
+  const normalized = hostname.replace(/^\[|\]$/g, "");
+  return normalized === "localhost" || normalized === "::1" || /^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(normalized);
+}
+
+export function validateApplicationUrl(value, { allowRemoteUrl = false } = {}) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error("application.url must be a valid http or https URL");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error("application.url must use http or https without embedded credentials");
+  }
+  if (!allowRemoteUrl && !isLoopback(parsed.hostname)) {
+    throw new Error("application.url must point to localhost or a loopback address unless application.allowRemoteUrl is true");
+  }
+  return String(value);
+}
+
 function waitForInterval(ms, signal) {
   return new Promise((resolvePromise) => {
     let timer;
@@ -34,7 +55,7 @@ async function waitForReady(url, timeoutMs, child, signal) {
     if (signal?.aborted) throw new Error("Application startup cancelled");
     if (child.exitCode !== null) throw new Error(`Application exited with code ${child.exitCode}`);
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, { redirect: "error" });
       if (response.ok) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
@@ -59,6 +80,7 @@ function sanitizeLogs(stdoutPath, stderrPath) {
 export async function startApplication({ config, cwd, logDirectory, signal }) {
   if (!config?.start) throw new Error("Application start command is not configured. Run elenchos init with --start <command>.");
   if (!config?.url) throw new Error("Application URL is not configured. Run elenchos init with --url <url>.");
+  validateApplicationUrl(config.url, { allowRemoteUrl: config.allowRemoteUrl === true });
   const parts = commandParts(config.start);
   mkdirSync(logDirectory, { recursive: true });
   const stdoutPath = resolve(logDirectory, "application.stdout.log");

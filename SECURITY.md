@@ -2,7 +2,19 @@
 
 ## Supported version
 
-Security fixes currently target the latest release of Elenchos.
+Security fixes currently target the latest release of Elenchos. The npm package may lag the GitHub repository between releases. Check the package version before relying on a fix.
+
+## Trust boundary
+
+Elenchos runs a configured coding-agent command, starts a configured application, and passes the application URL to a browser verifier. It has access to the local operating system and the repository. A repository, agent, application, Kane account, or MCP client should be treated as untrusted until you review it.
+
+The local MCP server exposes read-only inspection tools by default. The `elenchos_verify` tool is disabled unless the local config sets `mcp.allowVerify` to `true` or the MCP process has `ELENCHOS_MCP_VERIFY_ENABLED=1`. Each call also requires `confirm: true`. Enabling it can start processes, make network requests, consume Kane credits, and write `.elenchos` evidence. Review `application.start`, `application.url`, and `verification` before enabling it.
+
+Application readiness URLs must use HTTP or HTTPS and point to localhost or a loopback address by default. Set `application.allowRemoteUrl` only for a remote target you trust. Use a container, virtual machine, or separate operating-system account when the agent or repository is not trusted.
+
+Keep Kane, coding-agent, GitHub, npm, and other credentials in their own supported login or secret store. Never place them in `.elenchos/config.json`, task files, source code, logs, planning files, or commits. Elenchos applies best-effort redaction to persisted output, so treat local evidence and application logs as sensitive even after redaction.
+
+The maintainer Kane workflow is manual-only and uses a `kane-verification` environment that should require reviewer approval. Its Kane credentials are scoped to the credential check and authentication steps, and are not available to checkout, dependency installation, or pull request jobs.
 
 ## Reporting a vulnerability
 

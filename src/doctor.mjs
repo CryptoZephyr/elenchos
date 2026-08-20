@@ -3,13 +3,13 @@ import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { repositoryPath } from "./mcp-server.mjs";
 import { detectProject, loadConfig } from "./config.mjs";
 import { checkKaneReadiness } from "./kane.mjs";
 import { loadTask } from "./task.mjs";
-import { trimForLog } from "./utils.mjs";
+import { repositoryPath, trimForLog } from "./utils.mjs";
+import { VERSION } from "./version.mjs";
 
-const MCP_VERSION = "0.1.2";
+const MCP_VERSION = VERSION;
 
 function relativePath(root, path) {
   return relative(root, path) || ".";
@@ -66,9 +66,9 @@ export async function checkMcpReadiness(root) {
   }
 }
 
-export function inspectProject(root, configPath) {
+function inspectProject(root, configPath) {
   const detected = detectProject(root);
-  const configuredPath = configPath ? repositoryPath(root, configPath) : resolve(root, ".elenchos", "config.json");
+  const configuredPath = repositoryPath(root, configPath ?? ".elenchos/config.json");
   const base = {
     path: relativePath(root, configuredPath),
     projectType: detected.detected.projectType,
@@ -127,7 +127,7 @@ function taskWithoutSource(task) {
   return publicTask;
 }
 
-export function inspectTask(root, projectRoot, taskPath, config = {}) {
+function inspectTask(root, projectRoot, taskPath, config = {}) {
   if (!taskPath) {
     return {
       status: "not_checked",

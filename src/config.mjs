@@ -3,9 +3,9 @@ import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 import { defaultAgentConfig, detectAgents } from "./agent.mjs";
 import { checkKaneReadiness, locateKaneInvocation } from "./kane.mjs";
-import { readJson } from "./utils.mjs";
+import { readJson, repositoryPath } from "./utils.mjs";
 
-export const CONFIG_PATH = join(".elenchos", "config.json");
+const CONFIG_PATH = join(".elenchos", "config.json");
 
 function ensureLocalGitExcludes(cwd) {
   const result = spawnSync("git", ["rev-parse", "--git-path", "info/exclude"], {
@@ -108,6 +108,7 @@ export function detectProject(cwd, overrides = {}) {
     application: {
       start: selectedStart?.value ?? null,
       url: selectedUrl?.value ?? null,
+      allowRemoteUrl: false,
       readinessTimeoutMs: 60000,
       env: isDemoFixture ? { ELENCHOS_DEMO_BROKEN: "1" } : {},
     },
@@ -117,6 +118,9 @@ export function detectProject(cwd, overrides = {}) {
       verifyBeforeImplement: isDemoFixture,
       timeoutSeconds: 300,
       headless: true,
+    },
+    mcp: {
+      allowVerify: false,
     },
     detected: {
       projectType,
@@ -131,7 +135,7 @@ export function detectProject(cwd, overrides = {}) {
 }
 
 export function loadConfig(cwd, explicitPath) {
-  const path = explicitPath ? resolve(cwd, explicitPath) : join(cwd, CONFIG_PATH);
+  const path = repositoryPath(cwd, explicitPath ?? CONFIG_PATH);
   if (!existsSync(path)) throw new Error(`Missing Elenchos config at ${path}. Run: npx elenchos init`);
   const config = readJson(path);
   return { ...config, __path: path };

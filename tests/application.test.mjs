@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startApplication } from "../src/application.mjs";
+import { startApplication, validateApplicationUrl } from "../src/application.mjs";
 import { runCommand } from "../src/process.mjs";
 
 async function availablePort() {
@@ -73,6 +73,37 @@ test("terminates a command after its timeout", async () => {
   assert.equal(result.timedOut, true);
 });
 
+test("terminates descendant processes on POSIX", async () => {
+  if (process.platform === "win32") return;
+  const root = mkdtempSync(join(tmpdir(), "elenchos-process-group-"));
+  const pidFile = join(root, "child.pid");
+  const script = [
+    "import { writeFileSync } from 'node:fs';",
+    "import { spawn } from 'node:child_process';",
+    "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });",
+    `writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+  try {
+    const result = await runCommand({ command: process.execPath, args: ["--input-type=module", "-e", script], timeoutMs: 100 });
+    assert.equal(result.timedOut, true);
+    let childPid = null;
+    for (let attempt = 0; attempt < 10 && !childPid; attempt += 1) {
+      if (existsSync(pidFile)) childPid = Number(readFileSync(pidFile, "utf8"));
+      if (!childPid) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.ok(childPid);
+    let alive = true;
+    for (let attempt = 0; attempt < 10 && alive; attempt += 1) {
+      try { process.kill(childPid, 0); } catch { alive = false; }
+      if (alive) await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(alive, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("cancels a running command through AbortSignal", async () => {
   const controller = new AbortController();
   const resultPromise = runCommand({
@@ -85,4 +116,23 @@ test("cancels a running command through AbortSignal", async () => {
   const result = await resultPromise;
   assert.equal(result.cancelled, true);
   assert.equal(result.timedOut, false);
+});
+
+test("requires loopback application URLs unless remote access is explicit", () => {
+  assert.equal(validateApplicationUrl("http://127.0.0.1:3000"), "http://127.0.0.1:3000");
+  assert.equal(validateApplicationUrl("http://[::1]:3000"), "http://[::1]:3000");
+  assert.throws(() => validateApplicationUrl("https://example.com"), /loopback address/);
+  assert.equal(validateApplicationUrl("https://example.com", { allowRemoteUrl: true }), "https://example.com");
+  assert.throws(() => validateApplicationUrl("http://user:password@example.com"), /embedded credentials/);
+});
+
+test("does not execute shell metacharacters in Windows npm arguments", async () => {
+  if (process.platform !== "win32") return;
+  const marker = "ELENCHOS_SHELL_INJECTION_MARKER";
+  const result = await runCommand({
+    command: "npm",
+    args: [`--version & echo ${marker}`],
+    timeoutMs: 10000,
+  });
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(marker));
 });

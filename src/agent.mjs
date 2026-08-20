@@ -3,7 +3,7 @@ import { delimiter, join } from "node:path";
 import { commandExists, runCommand } from "./process.mjs";
 import { replacePrompt, trimForLog } from "./utils.mjs";
 
-export function detectAgent() {
+function detectAgent() {
   return detectAgents()[0] ?? null;
 }
 

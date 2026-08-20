@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 function writeFixture(root) {
+  mkdirSync(join(root, ".elenchos"), { recursive: true });
   mkdirSync(join(root, "tests"), { recursive: true });
   const task = {
     id: "mcp-task",
@@ -28,6 +29,12 @@ function writeFixture(root) {
     "Open the page and confirm the task is visible.",
     "",
   ].join("\n"), "utf8");
+  writeFileSync(join(root, ".elenchos", "config.json"), JSON.stringify({
+    repository: ".",
+    application: { start: "node app.mjs", url: "http://127.0.0.1:3000" },
+    verification: {},
+    mcp: { allowVerify: false },
+  }, null, 2) + "\n", "utf8");
 }
 
 test("exposes safe Elenchos tools over stdio MCP", async () => {
@@ -48,6 +55,8 @@ test("exposes safe Elenchos tools over stdio MCP", async () => {
       listed.tools.map((tool) => tool.name),
       ["elenchos_inspect", "elenchos_load_task", "elenchos_contract", "elenchos_status", "elenchos_verify"],
     );
+    const verifyTool = listed.tools.find((tool) => tool.name === "elenchos_verify");
+    assert.equal(verifyTool.annotations.destructiveHint, true);
 
     const loaded = await client.callTool({
       name: "elenchos_load_task",
@@ -75,6 +84,20 @@ test("exposes safe Elenchos tools over stdio MCP", async () => {
     });
     assert.equal(rejected.isError, true);
     assert.match(rejected.content[0].text, /inside the configured repository/);
+
+    const configRejected = await client.callTool({
+      name: "elenchos_contract",
+      arguments: { taskPath: "task.json", configPath: "../outside-config.json" },
+    });
+    assert.equal(configRejected.isError, true);
+    assert.match(configRejected.content[0].text, /inside the configured repository/);
+
+    const verificationDisabled = await client.callTool({
+      name: "elenchos_verify",
+      arguments: { taskPath: "task.json", confirm: true },
+    });
+    assert.equal(verificationDisabled.isError, true);
+    assert.match(verificationDisabled.content[0].text, /MCP verification is disabled/);
   } finally {
     await client.close().catch(() => {});
     await transport.close().catch(() => {});

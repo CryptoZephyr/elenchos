@@ -1,8 +1,68 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-const sensitiveKey = /^(?:password|passphrase|token|secret|credential|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|authorization|cookie|private[_-]?key|seed|mnemonic)$/i;
+const sensitiveKey = /(?:password|passphrase|token|secret|credential|accesstoken|refreshtoken|clientsecret|apikey|accesskey|authorization|cookie|privatekey|seed|mnemonic)$/i;
+
+function isSensitiveKey(key) {
+  const normalized = String(key ?? "").replace(/[^a-z0-9]/gi, "");
+  return sensitiveKey.test(normalized);
+}
+
+function isWithin(root, candidate) {
+  const fromRoot = relative(root, candidate);
+  return !fromRoot || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot));
+}
+
+export function repositoryPath(root, requested) {
+  if (typeof requested !== "string" || !requested.trim()) {
+    throw new Error("A repository-relative path is required");
+  }
+
+  const rootAbsolute = resolve(root);
+  const absolute = resolve(rootAbsolute, requested);
+  if (!isWithin(rootAbsolute, absolute)) {
+    throw new Error("The requested path must stay inside the configured repository");
+  }
+
+  let realRoot;
+  try {
+    realRoot = realpathSync(rootAbsolute);
+  } catch {
+    throw new Error("The configured repository does not exist");
+  }
+
+  let probe = absolute;
+  while (true) {
+    try {
+      const stat = lstatSync(probe);
+      if (stat.isSymbolicLink()) {
+        const realProbe = realpathSync(probe);
+        if (!isWithin(realRoot, realProbe)) {
+          throw new Error("The requested path must stay inside the configured repository");
+        }
+      }
+      if (probe === absolute) break;
+    } catch (error) {
+      if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
+    }
+
+    const parent = dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+
+  try {
+    const realAbsolute = realpathSync(absolute);
+    if (!isWithin(realRoot, realAbsolute)) {
+      throw new Error("The requested path must stay inside the configured repository");
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
+  }
+
+  return absolute;
+}
 
 export function ensureDirectory(path) {
   mkdirSync(path, { recursive: true });
@@ -16,10 +76,6 @@ export function readJson(path) {
 export function writeJson(path, value) {
   ensureDirectory(dirname(path));
   writeFileSync(path, `${JSON.stringify(redactValue(value), null, 2)}\n`, "utf8");
-}
-
-export function resolveFrom(root, value) {
-  return isAbsolute(value) ? value : resolve(root, value);
 }
 
 export function nowIso() {
@@ -37,7 +93,7 @@ export function sha256(value) {
 }
 
 export function redactValue(value, key = "") {
-  if (sensitiveKey.test(key)) return "[REDACTED]";
+  if (isSensitiveKey(key)) return "[REDACTED]";
   if (Array.isArray(value)) return value.map((item) => redactValue(item));
   if (!value || typeof value !== "object") return value;
 
@@ -51,16 +107,21 @@ export function redactValue(value, key = "") {
 }
 
 export function redactText(value) {
+  const redactLine = (line) => line
+    .replace(/(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, "$1[REDACTED]")
+    .replace(/([?&](?:code|code_challenge|state|client_secret|access_token|refresh_token|api_key|access_key)=)[^&\s]+/gi, "$1[REDACTED]")
+    .replace(/([A-Za-z0-9_.-]*?(?:password|passphrase|token|secret|credential|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|private[_-]?key|authorization|mnemonic)\s*[:=]\s*)(?:"([^"]*)"|'([^']*)'|([^\s,;&}]+))/gi, (match, prefix, doubleQuoted, singleQuoted) => {
+      if (doubleQuoted !== undefined) return `${prefix}"[REDACTED]"`;
+      if (singleQuoted !== undefined) return `${prefix}'[REDACTED]'`;
+      return `${prefix}[REDACTED]`;
+    });
   const text = String(value ?? "");
   const redactedLines = text.split(/\r?\n/).map((line) => {
     const trimmed = line.trim();
     if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try { return JSON.stringify(redactValue(JSON.parse(line))); } catch { /* Continue with text redaction. */ }
+      try { return redactLine(JSON.stringify(redactValue(JSON.parse(line)))); } catch { /* Continue with text redaction. */ }
     }
-    return line
-      .replace(/(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, "$1[REDACTED]")
-      .replace(/([?&](?:code|code_challenge|state|client_secret|access_token|refresh_token)=)[^&\s]+/gi, "$1[REDACTED]")
-      .replace(/((?:password|passphrase|token|secret|credential|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|private[_-]?key|mnemonic)\s*[:=]\s*)[^\s,;&]+/gi, "$1[REDACTED]");
+    return redactLine(line);
   });
   return redactedLines.join("\n");
 }
@@ -70,19 +131,22 @@ export function trimForLog(value, max = 12000) {
   return text.length <= max ? text : `${text.slice(0, max)}\n...[truncated]`;
 }
 
-export function shellSplit(input) {
+export function shellSplit(input, { windows = process.platform === "win32" } = {}) {
   const tokens = [];
   let current = "";
   let quote = null;
   let escaped = false;
+  const value = String(input ?? "");
 
-  for (const char of String(input ?? "")) {
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    const next = value[index + 1];
     if (escaped) {
       current += char;
       escaped = false;
       continue;
     }
-    if (char === "\\" && quote !== "'") {
+    if (char === "\\" && quote !== "'" && (!windows || next === '"')) {
       escaped = true;
       continue;
     }
@@ -113,8 +177,4 @@ export function shellSplit(input) {
 
 export function replacePrompt(value, prompt) {
   return String(value).split("{{prompt}}").join(prompt);
-}
-
-export function fileExists(path) {
-  return existsSync(path);
 }

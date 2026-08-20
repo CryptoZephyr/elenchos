@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { locateKaneInvocation, parseJsonLines } from "./kane.mjs";
 import { runCommand } from "./process.mjs";
-import { createId, redactValue, trimForLog } from "./utils.mjs";
+import { createId, redactValue, repositoryPath, trimForLog } from "./utils.mjs";
 
 function promptForTask(task) {
   const { source, ...promptTask } = task;
@@ -83,20 +83,28 @@ function savedPaths(result, generatedRoot, cwd) {
   const paths = reported
     .map((value) => typeof value === "string" ? value : value?.path ?? value?.file)
     .filter(Boolean)
-    .map((value) => resolve(cwd, value));
+    .map((value) => {
+      try {
+        const candidate = repositoryPath(cwd, value);
+        return repositoryPath(generatedRoot, relative(generatedRoot, candidate));
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
   const discovered = findTestFiles(generatedRoot);
   return [...new Set([...paths, ...discovered].filter((path) => existsSync(path)))];
 }
 
 export async function authorKaneTest({ task, cwd, outputPath, force = false, config = {}, signal, refine = null, requestId = null }) {
-  const target = resolve(cwd, outputPath);
+  const target = repositoryPath(cwd, outputPath);
   if (!/_test\.md$/i.test(target)) throw new Error("The Kane output path must end with _test.md");
   if (existsSync(target) && !force) throw new Error(`Kane test already exists at ${target}. Use --force to replace it.`);
   if (refine && !requestId) throw new Error("--refine requires --request-id from an earlier Kane authoring result");
   if (requestId && !refine) throw new Error("--request-id requires --refine");
 
   const invocation = locateKaneInvocation(config);
-  const generatedRoot = join(cwd, ".testmuai", "elenchos-authoring", createId("generate"));
+  const generatedRoot = repositoryPath(cwd, join(".testmuai", "elenchos-authoring", createId("generate")));
   mkdirSync(generatedRoot, { recursive: true });
   const timeoutMs = config.authoringTimeoutMs ?? 180000;
   const environment = { KANE_CLI_USER_AGENT: "elenchos", ...(config.env ?? {}) };

@@ -1,6 +1,6 @@
 import { createId, nowIso } from "./utils.mjs";
 
-export const RUN_STATES = Object.freeze([
+const RUN_STATES = Object.freeze([
   "CREATED",
   "IMPLEMENTING",
   "STARTING_APP",

@@ -1,9 +1,11 @@
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 const port = Number(process.env.PORT ?? 3000);
-const broken = process.env.ELENCHOS_DEMO_BROKEN === "1";
 
-const page = `<!doctype html>
+function pageFor(broken) {
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -81,15 +83,40 @@ const page = `<!doctype html>
   </script>
 </body>
 </html>`;
+}
 
-createServer((request, response) => {
-  if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" });
-    response.end(JSON.stringify({ ok: true }));
-    return;
-  }
-  response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-  response.end(page);
-}).listen(port, "127.0.0.1", () => {
-  process.stdout.write(`Proofboard listening at http://127.0.0.1:${port}\n`);
-});
+const securityHeaders = {
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+  "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff",
+};
+
+export function createDemoServer({ broken = process.env.ELENCHOS_DEMO_BROKEN === "1" } = {}) {
+  const page = pageFor(broken);
+  return createServer((request, response) => {
+    const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    if (request.method !== "GET") {
+      response.writeHead(405, { ...securityHeaders, allow: "GET", "content-type": "text/plain; charset=utf-8" });
+      response.end("Method Not Allowed");
+      return;
+    }
+    if (pathname === "/health") {
+      response.writeHead(200, { ...securityHeaders, "content-type": "application/json" });
+      response.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (pathname !== "/") {
+      response.writeHead(404, { ...securityHeaders, "content-type": "text/plain; charset=utf-8" });
+      response.end("Not Found");
+      return;
+    }
+    response.writeHead(200, { ...securityHeaders, "content-type": "text/html; charset=utf-8" });
+    response.end(page);
+  });
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  createDemoServer().listen(port, "127.0.0.1", () => {
+    process.stdout.write(`Proofboard listening at http://127.0.0.1:${port}\n`);
+  });
+}

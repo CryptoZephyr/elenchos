@@ -22,6 +22,7 @@
   "application": {
     "start": "npm run dev",
     "url": "http://127.0.0.1:3000",
+    "allowRemoteUrl": false,
     "readinessTimeoutMs": 60000,
     "env": {}
   },
@@ -31,5 +32,8 @@
     "retainWorkspace": false,
     "timeoutSeconds": 300,
     "headless": true
+  },
+  "mcp": {
+    "allowVerify": false
   }
 }

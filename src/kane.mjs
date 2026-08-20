@@ -22,10 +22,9 @@ export function locateKaneInvocation(config = {}) {
   const packagePath = packageKanePath();
   if (packagePath) return { command: process.execPath, prefixArgs: [packagePath], source: packagePath, installed: true };
   if (commandExists("kane-cli")) {
-    const command = process.platform === "win32" ? "kane-cli.cmd" : "kane-cli";
-    return { command, prefixArgs: [], source: "PATH", installed: true };
+    return { command: "kane-cli", prefixArgs: [], source: "PATH", installed: true };
   }
-  return { command: process.platform === "win32" ? "npx.cmd" : "npx", prefixArgs: ["--yes", "@testmuai/kane-cli"], source: "npx-fallback", installed: false };
+  return { command: "npx", prefixArgs: ["--yes", "@testmuai/kane-cli"], source: "npx-fallback", installed: false };
 }
 
 function commandOutput(result) {
@@ -374,5 +373,3 @@ export async function runKaneTest({ testFile, cwd, criteria = [], config = {}, e
     evidencePaths: persistRawEvidence(evidenceDirectory, result.stdout, result.stderr),
   };
 }
-
-export { readResultMarkdown };

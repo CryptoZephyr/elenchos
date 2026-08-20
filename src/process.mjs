@@ -6,13 +6,20 @@ function npmInvocation() {
   if (process.platform !== "win32") return { command: "npm", args: [] };
   const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
   if (existsSync(npmCli)) return { command: process.execPath, args: [npmCli] };
-  return { command: "npm.cmd", args: [] };
+  return { command: "npm", args: [] };
 }
 
 function normalizeWindowsCommand(command, args) {
   if (process.platform !== "win32") return { command, args, shell: false };
-  if (["npm", "npx", "pnpm", "yarn"].includes(command.toLowerCase())) {
-    return { command: `${command}.cmd`, args, shell: true };
+  const lowerCommand = String(command).toLowerCase();
+  if (["npm", "npx"].includes(lowerCommand)) {
+    const cliName = lowerCommand === "npm" ? "npm-cli.js" : "npx-cli.js";
+    const cliPath = join(dirname(process.execPath), "node_modules", "npm", "bin", cliName);
+    if (!existsSync(cliPath)) throw new Error(`Cannot safely run ${command} because its Node CLI entrypoint was not found`);
+    return { command: process.execPath, args: [cliPath, ...args], shell: false };
+  }
+  if (/\.(cmd|bat)$/i.test(String(command))) {
+    throw new Error(`Refusing to run Windows wrapper ${command} with shell execution`);
   }
   if (/\.ps1$/i.test(command)) {
     return {
@@ -21,7 +28,7 @@ function normalizeWindowsCommand(command, args) {
       shell: false,
     };
   }
-  return { command, args, shell: /\.(cmd|bat)$/i.test(command) };
+  return { command, args, shell: false };
 }
 
 export function commandExists(command) {
@@ -39,7 +46,7 @@ export function globalNpmRoot() {
   return result.status === 0 ? result.stdout.trim() : null;
 }
 
-function terminateProcessTree(child) {
+function terminateProcessTree(child, signal = "SIGTERM") {
   if (!child?.pid) return;
   if (process.platform === "win32") {
     spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
@@ -48,7 +55,9 @@ function terminateProcessTree(child) {
     });
     return;
   }
-  try { child.kill("SIGTERM"); } catch { /* The process may already be gone. */ }
+  try { process.kill(-child.pid, signal); } catch {
+    try { child.kill(signal); } catch { /* The process may already be gone. */ }
+  }
 }
 
 export function spawnManaged({ command, args = [], cwd, env, stdoutPath, stderrPath }) {
@@ -57,6 +66,7 @@ export function spawnManaged({ command, args = [], cwd, env, stdoutPath, stderrP
     cwd,
     env: { ...process.env, ...env },
     shell: normalized.shell,
+    detached: process.platform !== "win32",
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -76,6 +86,7 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
       cwd,
       env: { ...process.env, ...env },
       shell: normalized.shell,
+      detached: process.platform !== "win32",
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -91,7 +102,10 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
       if (settled) return;
       cancelled = true;
       terminateProcessTree(child);
-      forceTimer = setTimeout(() => finish({ exitCode: null, signal: "CANCELLED" }), 2500);
+      forceTimer = setTimeout(() => {
+        terminateProcessTree(child, "SIGKILL");
+        finish({ exitCode: null, signal: "CANCELLED" });
+      }, 2500);
     };
 
     const finish = (result) => {
@@ -113,7 +127,10 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
     timer = setTimeout(() => {
       timedOut = true;
       terminateProcessTree(child);
-      forceTimer = setTimeout(() => finish({ exitCode: null, signal: "TIMEOUT" }), 2500);
+      forceTimer = setTimeout(() => {
+        terminateProcessTree(child, "SIGKILL");
+        finish({ exitCode: null, signal: "TIMEOUT" });
+      }, 2500);
     }, timeoutMs);
 
     if (signal) {
@@ -137,7 +154,7 @@ export async function stopManagedProcess(managed) {
       resolve();
     });
   });
-  if (process.platform === "win32" && child.exitCode === null) {
-    terminateProcessTree(child);
+  if (child.exitCode === null) {
+    terminateProcessTree(child, "SIGKILL");
   }
 }

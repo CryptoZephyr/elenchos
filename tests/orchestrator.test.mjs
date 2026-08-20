@@ -126,6 +126,23 @@ test("records application startup failure as an error without invoking Kane", as
   }
 });
 
+test("rejects a verification test path outside the repository", async () => {
+  const fixture = repository();
+  fixture.task.verification.testFile = "../outside_test.md";
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config({ maxRepairAttempts: 0 }),
+      cwd: fixture.root,
+      mode: "verify",
+    });
+    assert.equal(result.run.status, "ERROR");
+    assert.match(result.run.error, /inside the configured repository/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("propagates cancellation from application startup and records a cancelled run", async () => {
   const fixture = repository();
   const controller = new AbortController();

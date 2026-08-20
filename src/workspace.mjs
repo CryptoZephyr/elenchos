@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
-import { isAbsolute, relative, resolve, join } from "node:path";
+import { relative, resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { sha256, writeJson } from "./utils.mjs";
+import { repositoryPath, sha256, writeJson } from "./utils.mjs";
 
 function git(cwd, args, { allowFailure = false } = {}) {
   const result = spawnSync("git", args, { cwd, encoding: "utf8", windowsHide: true });
@@ -21,15 +21,6 @@ function changedPaths(status) {
     if (code.includes("R") || code.includes("C")) index += 1;
   }
   return paths;
-}
-
-function repositoryPath(root, path) {
-  const absolutePath = resolve(root, path);
-  const fromRoot = relative(root, absolutePath);
-  if (!fromRoot || fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
-    throw new Error(`Unsafe repository path: ${path}`);
-  }
-  return absolutePath;
 }
 
 function fileMaterial(path) {
@@ -95,11 +86,11 @@ export function writeWorkspaceEvidence({ cwd, directory }) {
 
 export function removeWorkspace({ root, workspace }) {
   const allowedRoot = join(resolve(root), ".elenchos", "workspaces");
-  const absoluteWorkspace = resolve(workspace);
-  const fromAllowedRoot = relative(allowedRoot, absoluteWorkspace);
-  if (!fromAllowedRoot || fromAllowedRoot.startsWith("..") || isAbsolute(fromAllowedRoot)) {
-    throw new Error(`Refusing to remove workspace outside ${allowedRoot}`);
+  const requestedWorkspace = resolve(workspace);
+  if (!relative(allowedRoot, requestedWorkspace)) {
+    throw new Error(`Refusing to remove workspace root ${allowedRoot}`);
   }
+  const absoluteWorkspace = repositoryPath(allowedRoot, requestedWorkspace);
   const removal = git(root, ["worktree", "remove", "--force", absoluteWorkspace], { allowFailure: true });
   if (removal.status === 0 || !existsSync(absoluteWorkspace)) return;
 

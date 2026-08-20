@@ -10,7 +10,7 @@ The run is accepted only when the fixed task contract and Kane test are unchange
 - [Security policy](SECURITY.md)
 - [Recorded closed-loop evidence](EVIDENCE.md)
 
-The current published version is 0.1.3. It includes the local stdio MCP server and the doctor command described below. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
+The latest published npm version is 0.1.3. This repository contains the next unreleased hardening version, 0.1.4, until the package is published separately. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
 
 ## Why it exists
 
@@ -62,14 +62,14 @@ Use a container, virtual machine, or other operating-system boundary when the re
 - Node.js 20 or newer
 - Git
 
-The basic MCP tools work without a Kane account, GitHub configuration, or coding-agent CLI. Kane authentication and credits are required only when you run real browser verification. A full agent run also needs one supported coding-agent CLI:
+The basic MCP tools work without a Kane account, GitHub configuration, or coding-agent CLI. Kane authentication and credits are required only when you run real browser verification. The MCP verification tool is disabled by default. A full agent run also needs one supported coding-agent CLI:
 
     agy
     claude
     gemini
     codex
 
-A full verification run needs a local application that can be started by a command, a URL to check, and a Kane Functional test whose filename ends in _test.md.
+A full verification run needs a local application that can be started by a command, a loopback URL to check, and a Kane Functional test whose filename ends in _test.md. A remote URL requires an explicit application.allowRemoteUrl setting.
 
 Elenchos runs on Windows, macOS, and Linux. On Windows, AGY is configured to launch from the authenticated system directory when that directory is available. The isolated worktree is passed to AGY through {{cwd}} so the launch location and edit location can be different.
 
@@ -80,7 +80,7 @@ Install the published CLI:
     npm install -g elenchos
     elenchos --help
 
-The published package is currently 0.1.3 and includes the MCP and doctor commands:
+The published package is currently 0.1.3 and includes the MCP and doctor commands. The repository hardening changes are in the unreleased 0.1.4 source until a separate npm publish:
 
     npm install
     npm run doctor -- --repo .
@@ -110,7 +110,7 @@ Run these commands inside the repository that the coding agent will inspect:
     npm run doctor -- --repo .
     node src/cli.mjs mcp --repo .
 
-The MCP process waits for the coding agent over stdio. Configure the client to launch the same command, then restart the client. The read-only inspection and contract tools are available before Kane login.
+The MCP process waits for the coding agent over stdio. Configure the client to launch the same command, then restart the client. The read-only inspection and contract tools are available before Kane login. Verification stays disabled until you opt in after reviewing the local config.
 
 The doctor command reports MCP handshake status, project configuration, Kane installation and authentication, available credits, and task or Kane test files. Pass a task path when you want the contract checked too:
 
@@ -304,6 +304,7 @@ init creates .elenchos/config.json. The repository includes a credential-free [c
       "application": {
         "start": "npm run dev",
         "url": "http://127.0.0.1:5173",
+        "allowRemoteUrl": false,
         "readinessTimeoutMs": 60000,
         "env": {}
       },
@@ -313,6 +314,9 @@ init creates .elenchos/config.json. The repository includes a credential-free [c
         "retainWorkspace": false,
         "timeoutSeconds": 300,
         "headless": true
+      },
+      "mcp": {
+        "allowVerify": false
       }
     }
 
@@ -342,7 +346,7 @@ The defaults are starting points. Review the command's own permission model befo
 
 ### Application
 
-application.start can be a command string or an argument array. It runs from the verification workspace. application.url is polled until it returns a successful response or the readiness timeout expires.
+application.start can be a command string or an argument array. It runs from the verification workspace without shell interpolation. application.url is polled until it returns a successful response or the readiness timeout expires. URLs must use http or https and point to localhost or a loopback address by default. Set application.allowRemoteUrl to true only when the remote target is trusted.
 
 application.env is passed to the application process. Keep secrets in the local configuration or environment, never in a committed example. Application stdout and stderr are saved per attempt and receive best-effort redaction before persistence.
 
@@ -482,16 +486,16 @@ An MCP client can launch that process with a configuration like this, replacing 
       }
     }
 
-The read-only tools inspect the repository, load a task, inspect the task and Kane test contract, and read a sanitized run summary. These tools need no GitHub setup and do not need Kane authentication. The explicit verification tool runs the existing Elenchos verify mode. It can start the application, consume Kane credits, and write local .elenchos evidence. It never launches a coding agent or edits source files through the MCP surface. Repository-relative paths are required, and raw Kane output, local evidence paths, and credential-bearing fields are filtered from MCP responses.
+The read-only tools inspect the repository, load a task, inspect the task and Kane test contract, and read a sanitized run summary. These tools need no GitHub setup and do not need Kane authentication. The explicit verification tool is disabled by default. Enable it with mcp.allowVerify: true in the local config, or ELENCHOS_MCP_VERIFY_ENABLED=1 in the MCP process environment, only after reviewing the configured command and URL. Each verification call also needs confirm: true. It can start the application, make network requests, consume Kane credits, and write local .elenchos evidence. It never launches a coding agent or edits source files through the MCP surface. Repository-relative paths are required, and raw Kane output, local evidence paths, and credential-bearing fields are filtered from MCP responses.
 
 ### Maintainer-only GitHub verification
 
-The included .github/workflows/verification.yml workflow belongs to the Elenchos maintainer repository. End users do not need these settings to use the MCP server. The workflow runs syntax, test, and whitespace checks on pull requests and manual runs. Its Kane job is opt-in. A maintainer can enable it with the repository variable ELENCHOS_KANE_ENABLED set to true and add these repository secrets:
+The included .github/workflows/verification.yml workflow belongs to the Elenchos maintainer repository. End users do not need these settings to use the MCP server. The workflow runs syntax, test, and whitespace checks on pull requests and manual runs. Its Kane job is opt-in, manual-only, and attached to the `kane-verification` environment. Configure that environment with required reviewers before enabling it. A maintainer can enable it with the repository variable ELENCHOS_KANE_ENABLED set to true and add these repository secrets:
 
     KANE_USERNAME
     KANE_ACCESS_KEY
 
-KANE_PROJECT_ID and KANE_FOLDER_ID are optional secrets for selecting a Kane project or folder. The workflow passes these values to the official Kane CLI login flags. It does not print the secrets, post pull request comments, or request GitHub write permissions. Pull requests from forks run the repository checks and skip the Kane job because GitHub does not provide repository secrets to them.
+KANE_PROJECT_ID and KANE_FOLDER_ID are optional secrets for selecting a Kane project or folder. The workflow passes these values to the official Kane CLI login flags only in the authentication step. It does not expose Kane secrets to checkout, dependency installation, or pull request jobs. It does not print the secrets, post pull request comments, or request GitHub write permissions.
 
 ## Roadmap
 

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -8,22 +8,11 @@ import { detectProject, loadConfig } from "./config.mjs";
 import { checkKaneReadiness } from "./kane.mjs";
 import { executeRun } from "./orchestrator.mjs";
 import { loadTask } from "./task.mjs";
-import { readJson, redactValue, trimForLog } from "./utils.mjs";
+import { readJson, redactValue, repositoryPath, trimForLog } from "./utils.mjs";
+import { VERSION } from "./version.mjs";
 
 function relativePath(root, path) {
   return relative(root, path) || ".";
-}
-
-export function repositoryPath(root, requested) {
-  if (typeof requested !== "string" || !requested.trim()) {
-    throw new Error("A repository-relative path is required");
-  }
-  const absolute = resolve(root, requested);
-  const fromRoot = relative(root, absolute);
-  if (fromRoot.startsWith("..") || isAbsolute(fromRoot)) {
-    throw new Error("The requested path must stay inside the configured repository");
-  }
-  return absolute;
 }
 
 function safeRunId(runId) {
@@ -34,9 +23,10 @@ function safeRunId(runId) {
 }
 
 function toolResult(value) {
+  const safeValue = redactValue(value);
   return {
-    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value,
+    content: [{ type: "text", text: JSON.stringify(safeValue, null, 2) }],
+    structuredContent: safeValue,
   };
 }
 
@@ -63,7 +53,7 @@ function taskWithoutSource(task) {
   return redactValue(publicTask);
 }
 
-export async function inspectRepository(root) {
+async function inspectRepository(root) {
   const detected = detectProject(root);
   const kane = await checkKaneReadiness(detected.verification ?? {});
   return {
@@ -92,7 +82,7 @@ export async function inspectRepository(root) {
   };
 }
 
-export function loadTaskSnapshot(root, taskPath) {
+function loadTaskSnapshot(root, taskPath) {
   const absoluteTaskPath = repositoryPath(root, taskPath);
   const task = loadTask(absoluteTaskPath);
   return {
@@ -114,7 +104,7 @@ function configForRepository(root, configPath, required = true) {
   };
 }
 
-export function contractSnapshot(root, taskPath, configPath) {
+function contractSnapshot(root, taskPath, configPath) {
   const { config, repositoryRoot } = configForRepository(root, configPath, false);
   const absoluteTaskPath = repositoryPath(repositoryRoot, taskPath);
   const task = loadTask(absoluteTaskPath);
@@ -169,7 +159,7 @@ function verificationSnapshot(verification) {
   };
 }
 
-export function runSnapshot(run) {
+function runSnapshot(run) {
   return {
     id: run.id,
     taskId: run.taskId,
@@ -202,15 +192,21 @@ export function runSnapshot(run) {
   };
 }
 
-export function readRunSnapshot(root, runId) {
+function readRunSnapshot(root, runId) {
   const safeId = safeRunId(runId);
-  const path = join(root, ".elenchos", "runs", safeId, "run.json");
+  const path = repositoryPath(root, join(".elenchos", "runs", safeId, "run.json"));
   if (!existsSync(path)) throw new Error(`Run not found: ${safeId}`);
   return runSnapshot(readJson(path));
 }
 
-async function verifyTask(root, taskPath, configPath, signal) {
+async function verifyTask(root, taskPath, configPath, signal, confirmed) {
   const { config, repositoryRoot } = configForRepository(root, configPath);
+  if (config.mcp?.allowVerify !== true && process.env.ELENCHOS_MCP_VERIFY_ENABLED !== "1") {
+    throw new Error("MCP verification is disabled. Set mcp.allowVerify to true or ELENCHOS_MCP_VERIFY_ENABLED=1 after reviewing the local verification command and URL.");
+  }
+  if (confirmed !== true) {
+    throw new Error("MCP verification requires confirm=true after reviewing the local verification command and URL.");
+  }
   const task = loadTask(repositoryPath(repositoryRoot, taskPath));
   const result = await executeRun({
     task,
@@ -222,11 +218,11 @@ async function verifyTask(root, taskPath, configPath, signal) {
   return runSnapshot(result.run);
 }
 
-export function createElenchosMcpServer({ root }) {
-  const repositoryRoot = resolve(root);
+function createElenchosMcpServer({ root }) {
+  const repositoryRoot = repositoryPath(root, ".");
   const server = new McpServer({
     name: "elenchos",
-    version: "0.1.2",
+    version: VERSION,
   });
 
   server.registerTool(
@@ -303,19 +299,20 @@ export function createElenchosMcpServer({ root }) {
     "elenchos_verify",
     {
       title: "Verify a task with Kane",
-      description: "Run Kane against the current implementation through Elenchos verify mode. This can start the application, consume Kane credits, and write local run evidence, but it does not invoke a coding agent or edit source files.",
+      description: "Run Kane against the current implementation through Elenchos verify mode. This opt-in tool can start the configured application, make network requests, consume Kane credits, and write local run evidence. It does not invoke a coding agent or edit source files. Keep it disabled until the command and URL in the repository config are trusted.",
       inputSchema: {
         taskPath: z.string().min(1).describe("Task JSON path relative to the configured repository"),
         configPath: z.string().optional().describe("Optional Elenchos config path relative to the configured repository"),
+        confirm: z.literal(true).describe("Required explicit confirmation after reviewing the configured command and URL"),
       },
       annotations: {
         readOnlyHint: false,
-        destructiveHint: false,
+        destructiveHint: true,
         idempotentHint: false,
         openWorldHint: true,
       },
     },
-    async ({ taskPath, configPath }, extra) => safeTool(repositoryRoot, () => verifyTask(repositoryRoot, taskPath, configPath, extra.signal)),
+    async ({ taskPath, configPath, confirm }, extra) => safeTool(repositoryRoot, () => verifyTask(repositoryRoot, taskPath, configPath, extra.signal, confirm)),
   );
 
   return server;

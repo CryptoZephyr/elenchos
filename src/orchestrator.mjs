@@ -1,12 +1,12 @@
 import { mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { startApplication } from "./application.mjs";
 import { buildImplementationPrompt, buildRepairPrompt, runAgent } from "./agent.mjs";
 import { assertVerificationContract, createVerificationContract } from "./contract.mjs";
 import { transitionRun, createRun } from "./domain.mjs";
 import { runKaneTest } from "./kane.mjs";
 import { createRunPersistence } from "./persistence.mjs";
-import { nowIso } from "./utils.mjs";
+import { nowIso, repositoryPath } from "./utils.mjs";
 import { captureRepositoryState, prepareWorkspace, removeWorkspace, sameRepositoryState, writeWorkspaceEvidence } from "./workspace.mjs";
 
 function saveTransition(run, persistence, next, detail) {
@@ -19,7 +19,7 @@ function testPathFor(task, config, root) {
   if (!configured) {
     throw new Error("A Kane-authored verification.testFile is required. Elenchos will not generate its own verification contract.");
   }
-  return resolve(root, configured);
+  return repositoryPath(root, configured);
 }
 
 export async function executeRun({ task, config, cwd, mode = "run", services = {}, signal }) {
@@ -30,19 +30,21 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
   const persistence = createRunPersistence(cwd, run.id);
   run.configPath = config.__path ?? null;
   persistence.save(run);
-  const testFile = testPathFor(task, config, cwd);
-  const contract = createVerificationContract(task, testFile);
-  run.verificationContract = testFile;
-  run.verificationContractHash = contract.testHash;
-  run.taskHash = contract.taskHash;
-  persistence.save(run);
 
   let application = null;
   let workspace = null;
+  let testFile;
+  let contract;
   const throwIfCancelled = () => {
     if (signal?.aborted) throw new Error("Run cancelled");
   };
   try {
+    testFile = testPathFor(task, config, cwd);
+    contract = createVerificationContract(task, testFile);
+    run.verificationContract = testFile;
+    run.verificationContractHash = contract.testHash;
+    run.taskHash = contract.taskHash;
+    persistence.save(run);
     throwIfCancelled();
     workspace = prepareWorkspace({ cwd, runId: run.id, mode });
     const executionCwd = workspace.cwd;
