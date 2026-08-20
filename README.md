@@ -10,7 +10,7 @@ The run is accepted only when the fixed task contract and Kane test are unchange
 - [Security policy](SECURITY.md)
 - [Recorded closed-loop evidence](EVIDENCE.md)
 
-The latest published npm version is 0.1.3. This repository contains the next unreleased hardening version, 0.1.4, until the package is published separately. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
+The 0.1.4 release includes the MCP and doctor commands plus the hardening described below. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
 
 ## Why it exists
 
@@ -80,7 +80,7 @@ Install the published CLI:
     npm install -g elenchos
     elenchos --help
 
-The published package is currently 0.1.3 and includes the MCP and doctor commands. The repository hardening changes are in the unreleased 0.1.4 source until a separate npm publish:
+The 0.1.4 package includes the MCP and doctor commands and the repository hardening changes:
 
     npm install
     npm run doctor -- --repo .
