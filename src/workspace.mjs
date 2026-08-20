@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { sha256, writeJson } from "./utils.mjs";
@@ -100,7 +100,19 @@ export function removeWorkspace({ root, workspace }) {
   if (!fromAllowedRoot || fromAllowedRoot.startsWith("..") || isAbsolute(fromAllowedRoot)) {
     throw new Error(`Refusing to remove workspace outside ${allowedRoot}`);
   }
-  git(root, ["worktree", "remove", "--force", absoluteWorkspace]);
+  const removal = git(root, ["worktree", "remove", "--force", absoluteWorkspace], { allowFailure: true });
+  if (removal.status === 0 || !existsSync(absoluteWorkspace)) return;
+
+  const registered = git(root, ["worktree", "list", "--porcelain"]).stdout
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .map((line) => resolve(line.slice("worktree ".length)))
+    .some((path) => path.toLowerCase() === absoluteWorkspace.toLowerCase());
+  if (registered) {
+    throw new Error(`Git command failed: git worktree remove --force ${absoluteWorkspace}\n${(removal.stderr || removal.stdout).trim()}`);
+  }
+
+  rmSync(absoluteWorkspace, { recursive: true, force: true, maxRetries: 4, retryDelay: 250 });
 }
 
 export function prepareWorkspace({ cwd, runId, mode }) {

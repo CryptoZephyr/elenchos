@@ -100,7 +100,7 @@ The sanitized [closed-loop evidence](EVIDENCE.md) records the verified demo run 
 
 `elenchos init` writes `.elenchos/config.json`, adds `.elenchos/` and `.testmuai/` to Git's local exclude file, and checks whether Kane is installed and authenticated. [config.example.json](config.example.json) documents the supported fields without credentials or machine session data.
 
-The `repository` field selects the target repository. Agent arguments use `{{prompt}}` as the prompt placeholder. `KANE_CLI_PATH` can point to the installed Kane entry file when the command shim isn't on `PATH`.
+The `repository` field selects the target repository. Agent arguments can use `{{prompt}}` and `{{cwd}}` placeholders. If an agent keeps authentication per launch directory, set `agent.launchCwd` to that authenticated directory and pass the isolated worktree with an argument such as `--add-dir {{cwd}}`. The implementation prompt still restricts edits to the isolated worktree. `KANE_CLI_PATH` can point to the installed Kane entry file when the command shim isn't on `PATH`.
 
 ## Development
 

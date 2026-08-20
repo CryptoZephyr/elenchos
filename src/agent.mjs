@@ -16,7 +16,7 @@ export function defaultAgentConfig(provider = detectAgent()) {
     return {
       provider: "gemini",
       command: "agy",
-      args: ["--agent", "gemini", "--print", "{{prompt}}", "--output-format", "json", "--mode", "accept-edits", "--print-timeout", "300s"],
+      args: ["--agent", "gemini", "--add-dir", "{{cwd}}", "--print", "{{prompt}}", "--output-format", "json", "--mode", "accept-edits", "--print-timeout", "300s"],
       timeoutMs: 330000,
     };
   }
@@ -44,8 +44,10 @@ export function defaultAgentConfig(provider = detectAgent()) {
   };
 }
 
-function renderAgentCommand(config, prompt) {
-  const args = Array.isArray(config.args) ? config.args.map((arg) => replacePrompt(arg, prompt)) : [prompt];
+function renderAgentCommand(config, prompt, cwd) {
+  const args = Array.isArray(config.args)
+    ? config.args.map((arg) => replacePrompt(arg, prompt).split("{{cwd}}").join(cwd))
+    : [prompt];
   return { command: config.command, args };
 }
 
@@ -63,6 +65,10 @@ function structuredAgentFailure(stdout) {
     } catch { /* Ignore non-JSON agent narration. */ }
   }
   return null;
+}
+
+export function isAuthenticationFailure(value) {
+  return /(?:401|unauthori[sz]ed|invalid token|failed to authenticate|authentication (?:failed|required|timed out)|login required)/i.test(String(value ?? ""));
 }
 
 export function buildImplementationPrompt(task, cwd) {
@@ -94,7 +100,7 @@ export function buildRepairPrompt(task, failure, cwd, attempt) {
 
 export async function runAgent({ config, prompt, cwd }) {
   if (!config?.command) throw new Error("No coding-agent command configured");
-  const { command, args } = renderAgentCommand(config, prompt);
+  const { command, args } = renderAgentCommand(config, prompt, cwd);
   const env = { ...(config.env ?? {}) };
   const gitTools = join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "usr", "bin");
   if (process.platform === "win32" && command.toLowerCase() === "agy" && existsSync(join(gitTools, "grep.exe"))) {
@@ -103,7 +109,7 @@ export async function runAgent({ config, prompt, cwd }) {
   const result = await runCommand({
     command,
     args,
-    cwd,
+    cwd: config.launchCwd ?? cwd,
     env,
     timeoutMs: config.timeoutMs ?? 300000,
   });
@@ -111,8 +117,7 @@ export async function runAgent({ config, prompt, cwd }) {
   if (result.timedOut) throw new Error(`Agent timed out after ${config.timeoutMs ?? 120000}ms`);
   if (result.exitCode !== 0) {
     const raw = result.stderr || result.stdout;
-    const authFailure = /(?:401|unauthori[sz]ed|invalid token|failed to authenticate|authentication failed)/i.test(raw);
-    if (authFailure) {
+    if (isAuthenticationFailure(raw)) {
       throw new Error(`Agent authentication failed for ${config.provider ?? config.command}. Refresh that agent's credentials before retrying.`);
     }
     throw new Error(`Agent exited with code ${result.exitCode}: ${trimForLog(raw, 4000)}`);

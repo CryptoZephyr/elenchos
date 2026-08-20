@@ -59,6 +59,7 @@ export function redactText(value) {
     }
     return line
       .replace(/(authorization\s*:\s*(?:bearer|basic)\s+)[^\s]+/gi, "$1[REDACTED]")
+      .replace(/([?&](?:code|code_challenge|state|client_secret|access_token|refresh_token)=)[^&\s]+/gi, "$1[REDACTED]")
       .replace(/((?:password|passphrase|token|secret|credential|cookie|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|access[_-]?key|private[_-]?key|mnemonic)\s*[:=]\s*)[^\s,;&]+/gi, "$1[REDACTED]");
   });
   return redactedLines.join("\n");
