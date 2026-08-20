@@ -1,6 +1,6 @@
 {
   "name": "elenchos",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Kane-backed verification loop for AI coding agents",
   "type": "module",
   "bin": {
