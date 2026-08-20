@@ -8,12 +8,14 @@ import { printRunSummary } from "./report.mjs";
 import { readJson } from "./utils.mjs";
 import { authorKaneTest, formatAuthorSummary } from "./author.mjs";
 import { startMcpServer } from "./mcp-server.mjs";
+import { createDoctorReport, formatDoctorReport } from "./doctor.mjs";
 
 function usage() {
   return `Elenchos - independent verification for AI coding agents
 
 Usage:
   elenchos init [--force] [--start <command>] [--url <url>] [--agent <agy|claude|gemini|codex>]
+  elenchos doctor [task.json] [--repo <path>] [--config <path>] [--json] [--strict]
   elenchos mcp [--repo <path>]
   elenchos author <task.json> [--output <path>] [--refine <answer> --request-id <id>] [--force] [--json]
   elenchos run <task.json> [--json]
@@ -89,6 +91,16 @@ async function main() {
 
   if (command === "mcp") {
     await startMcpServer({ root: cwd });
+    return;
+  }
+
+  if (command === "doctor") {
+    const report = await createDoctorReport(cwd, {
+      configPath: flags.config,
+      taskPath: positional[0],
+    });
+    process.stdout.write(flags.json ? `${JSON.stringify(report, null, 2)}\n` : `${formatDoctorReport(report)}\n`);
+    if (flags.strict && report.verification.status !== "ready") process.exitCode = 1;
     return;
   }
 

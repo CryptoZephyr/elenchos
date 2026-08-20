@@ -10,7 +10,7 @@ The run is accepted only when the fixed task contract and Kane test are unchange
 - [Security policy](SECURITY.md)
 - [Recorded closed-loop evidence](EVIDENCE.md)
 
-The current published version is 0.1.2. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
+The current published version is 0.1.2. The repository also contains the next MCP onboarding improvements, which are not in the published package yet. Elenchos was built for the Kane CLI online hackathon and uses the real Kane CLI flow. It does not replace Kane with a mock verifier.
 
 ## Why it exists
 
@@ -61,14 +61,15 @@ Use a container, virtual machine, or other operating-system boundary when the re
 
 - Node.js 20 or newer
 - Git
-- An authenticated Kane CLI installation
-- One supported coding-agent CLI:
-  - agy
-  - claude
-  - gemini
-  - codex
-- A local application that can be started by a command and checked at a URL
-- A Kane Functional test whose filename ends in _test.md
+
+The basic MCP tools work without a Kane account, GitHub configuration, or coding-agent CLI. Kane authentication and credits are required only when you run real browser verification. A full agent run also needs one supported coding-agent CLI:
+
+    agy
+    claude
+    gemini
+    codex
+
+A full verification run needs a local application that can be started by a command, a URL to check, and a Kane Functional test whose filename ends in _test.md.
 
 Elenchos runs on Windows, macOS, and Linux. On Windows, AGY is configured to launch from the authenticated system directory when that directory is available. The isolated worktree is passed to AGY through {{cwd}} so the launch location and edit location can be different.
 
@@ -79,7 +80,12 @@ Install the published CLI:
     npm install -g elenchos
     elenchos --help
 
-Install and authenticate Kane separately:
+The published package is currently 0.1.2. To use the current MCP and doctor source before the next npm release, work from a repository checkout:
+
+    npm install
+    npm run doctor -- --repo .
+
+Install and authenticate Kane only when you want real browser verification:
 
     npm install -g @testmuai/kane-cli
     kane-cli login
@@ -88,7 +94,7 @@ Install and authenticate Kane separately:
 
 whoami and balance are useful readiness checks before the first Elenchos run. Kane credentials stay in Kane's own local session. Do not copy them into an Elenchos config file or repository.
 
-Install the official Kane coding-agent skill when you want Kane to author or debug browser tests from an agent workflow:
+Install the official Kane coding-agent skill only when you want Kane to author or debug browser tests from an agent workflow:
 
     npx @testmuai/kane-cli-skill
 
@@ -96,14 +102,32 @@ Authenticate the coding agent through its own CLI. Elenchos detects supported co
 
 ## Quick start
 
-Run these commands inside the repository you want to verify:
+### Basic MCP onboarding
+
+Run these commands inside the repository that the coding agent will inspect:
+
+    npm install
+    npm run doctor -- --repo .
+    node src/cli.mjs mcp --repo .
+
+The MCP process waits for the coding agent over stdio. Configure the client to launch the same command, then restart the client. The read-only inspection and contract tools are available before Kane login.
+
+The doctor command reports MCP handshake status, project configuration, Kane installation and authentication, available credits, and task or Kane test files. Pass a task path when you want the contract checked too:
+
+    npm run doctor -- --repo . demo/tasks/add-task.json
+
+Use --json for machine-readable output. Use --strict when a script should fail unless Kane verification is ready.
+
+### Full Kane verification
+
+After the basic MCP setup, run these commands when you want the agent and Kane loop:
 
     elenchos init
     elenchos author path/to/task.json --output path/to/feature_test.md
     elenchos run path/to/task.json
     elenchos status <run-id>
 
-Use npx elenchos in place of elenchos when you do not want a global install.
+Use npx elenchos in place of elenchos after the next npm release includes the MCP and doctor commands.
 
 ### 1. Initialize the repository
 
@@ -399,6 +423,7 @@ Elenchos is a local Node.js CLI. It has no application backend and does not host
 | src/orchestrator.mjs | Coordinates worktrees, the agent, application lifecycle, Kane, repairs, and cleanup. |
 | src/kane.mjs | Runs Kane, parses structured events, classifies outcomes, and maps criterion evidence. |
 | src/mcp-server.mjs | Exposes repository inspection, contract, run status, and explicit verification tools over local stdio MCP. |
+| src/doctor.mjs | Checks MCP handshake, project setup, Kane readiness, credits, and task or test files. |
 | src/workspace.mjs | Captures Git state, writes workspace evidence, and safely removes detached worktrees. |
 | src/report.mjs | Prints human-readable and JSON run summaries. |
 
@@ -421,6 +446,7 @@ The package scripts are:
 | npm run build | Checks source syntax. |
 | npm test | Runs the Node test suite with coverage. |
 | npm run demo | Starts the included demo application. |
+| npm run doctor -- --repo . | Checks basic MCP setup and optional Kane verification readiness. |
 | npm run mcp -- --repo . | Starts the local stdio MCP server for the selected repository. |
 | npm run proof | Runs the demo task through Elenchos using the local config. |
 | npm audit --omit=dev | Checks production dependency vulnerabilities. |
@@ -434,7 +460,7 @@ Before committing a change, check the public boundary:
 
 Keep private planning files, local run bundles, credentials, session data, logs, and browser evidence out of commits and package contents.
 
-## MCP and GitHub Actions
+## MCP, onboarding, and GitHub Actions
 
 The repository includes a local stdio MCP server for coding agents. From a checkout, start it with:
 
@@ -456,9 +482,11 @@ An MCP client can launch that process with a configuration like this, replacing 
       }
     }
 
-The read-only tools inspect the repository, load a task, inspect the task and Kane test contract, and read a sanitized run summary. The explicit verification tool runs the existing Elenchos verify mode. It can start the application, consume Kane credits, and write local .elenchos evidence. It never launches a coding agent or edits source files through the MCP surface. Repository-relative paths are required, and raw Kane output, local evidence paths, and credential-bearing fields are filtered from MCP responses.
+The read-only tools inspect the repository, load a task, inspect the task and Kane test contract, and read a sanitized run summary. These tools need no GitHub setup and do not need Kane authentication. The explicit verification tool runs the existing Elenchos verify mode. It can start the application, consume Kane credits, and write local .elenchos evidence. It never launches a coding agent or edits source files through the MCP surface. Repository-relative paths are required, and raw Kane output, local evidence paths, and credential-bearing fields are filtered from MCP responses.
 
-The included .github/workflows/verification.yml workflow runs syntax, test, and whitespace checks on pull requests and manual runs. Its Kane job is opt-in. Enable it with the repository variable ELENCHOS_KANE_ENABLED set to true and add these repository secrets:
+### Maintainer-only GitHub verification
+
+The included .github/workflows/verification.yml workflow belongs to the Elenchos maintainer repository. End users do not need these settings to use the MCP server. The workflow runs syntax, test, and whitespace checks on pull requests and manual runs. Its Kane job is opt-in. A maintainer can enable it with the repository variable ELENCHOS_KANE_ENABLED set to true and add these repository secrets:
 
     KANE_USERNAME
     KANE_ACCESS_KEY

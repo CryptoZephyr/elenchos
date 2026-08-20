@@ -28,31 +28,83 @@ export function locateKaneInvocation(config = {}) {
   return { command: process.platform === "win32" ? "npx.cmd" : "npx", prefixArgs: ["--yes", "@testmuai/kane-cli"], source: "npx-fallback", installed: false };
 }
 
+function commandOutput(result) {
+  return trimForLog([result.stdout, result.stderr].filter(Boolean).join("\n"), 4000);
+}
+
+function fieldFromOutput(output, label) {
+  return output.match(new RegExp(`^\\s*${label}\\s+(.+?)\\s*$`, "im"))?.[1]?.trim() ?? null;
+}
+
+function creditFromOutput(output, label) {
+  const value = fieldFromOutput(output, label);
+  if (!value) return null;
+  const parsed = Number(value.replace(/,/g, "").match(/[0-9]+(?:\.[0-9]+)?/)?.[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+export function parseKaneIdentity(result) {
+  const output = commandOutput(result);
+  const unauthenticated = /not authenticated|token expired|credentials rejected|re-login|login required/i.test(output);
+  const authenticated = result.exitCode === 0 && !result.timedOut && !unauthenticated;
+  return {
+    status: authenticated ? "authenticated" : "needs_authentication",
+    authenticated,
+    profile: fieldFromOutput(output, "Profile"),
+    environment: fieldFromOutput(output, "Environment"),
+    method: fieldFromOutput(output, "Method"),
+    expires: fieldFromOutput(output, "Expires"),
+  };
+}
+
+export function parseKaneBalance(result) {
+  const output = commandOutput(result);
+  const available = creditFromOutput(output, "Available credits:");
+  const total = creditFromOutput(output, "Total credits:");
+  const availableStatus = result.exitCode === 0 && !result.timedOut ? "available" : "unavailable";
+  return {
+    status: availableStatus,
+    available,
+    total,
+  };
+}
+
 export async function checkKaneReadiness(config = {}) {
   const invocation = locateKaneInvocation(config);
   if (!invocation.installed) {
-    return { ready: false, installed: false, source: invocation.source, action: "Install Kane with npm install -g @testmuai/kane-cli" };
+    return {
+      ready: false,
+      installed: false,
+      source: invocation.source,
+      action: "Install Kane with npm install -g @testmuai/kane-cli",
+      identity: { status: "not_checked", authenticated: false, profile: null, environment: null, method: null, expires: null },
+      balance: { status: "not_checked", available: null, total: null },
+    };
   }
-  const result = await runCommand({
+  const identityResult = await runCommand({
     command: invocation.command,
     args: [...invocation.prefixArgs, "whoami"],
     env: { KANE_CLI_USER_AGENT: "elenchos" },
     timeoutMs: 30000,
   });
-  const balance = result.exitCode === 0 && !result.timedOut
-    ? await runCommand({
-      command: invocation.command,
-      args: [...invocation.prefixArgs, "balance"],
-      env: { KANE_CLI_USER_AGENT: "elenchos" },
-      timeoutMs: 30000,
-    })
-    : null;
-  const ready = result.exitCode === 0 && !result.timedOut && balance?.exitCode === 0 && !balance.timedOut;
+  const balanceResult = await runCommand({
+    command: invocation.command,
+    args: [...invocation.prefixArgs, "balance"],
+    env: { KANE_CLI_USER_AGENT: "elenchos" },
+    timeoutMs: 30000,
+  });
+  const identity = parseKaneIdentity(identityResult);
+  const balance = parseKaneBalance(balanceResult);
+  const ready = identity.authenticated && balance.status === "available";
   return {
     ready,
     installed: true,
     source: invocation.source,
-    action: ready ? null : "Authenticate Kane with kane-cli login and confirm kane-cli balance",
+    identity,
+    balance,
+    action: ready ? null : identity.authenticated
+      ? "Confirm Kane credits with kane-cli balance"
+      : "Authenticate Kane with kane-cli login, then confirm kane-cli balance",
   };
 }
 

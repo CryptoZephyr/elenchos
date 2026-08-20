@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseKaneResult } from "../src/kane.mjs";
+import { parseKaneBalance, parseKaneIdentity, parseKaneResult } from "../src/kane.mjs";
 import { normalizeVerificationStatus } from "../src/domain.mjs";
 
 test("normalizes Kane status values", () => {
@@ -11,6 +11,26 @@ test("normalizes Kane status values", () => {
   assert.equal(normalizeVerificationStatus("failed"), "FAIL");
   assert.equal(normalizeVerificationStatus("verifier_error"), "VERIFIER_ERROR");
   assert.equal(normalizeVerificationStatus("unknown"), "INCONCLUSIVE");
+});
+
+test("separates Kane authentication from available credits", () => {
+  const identity = parseKaneIdentity({
+    exitCode: 1,
+    timedOut: false,
+    stdout: "Not authenticated\nProfile       default\nToken         expired\n",
+    stderr: "Credentials rejected by the server.",
+  });
+  const balance = parseKaneBalance({
+    exitCode: 0,
+    timedOut: false,
+    stdout: "Available credits: 11098.7466\nTotal credits:     11200\n",
+    stderr: "",
+  });
+  assert.equal(identity.authenticated, false);
+  assert.equal(identity.status, "needs_authentication");
+  assert.equal(balance.status, "available");
+  assert.equal(balance.available, 11098.7466);
+  assert.equal(balance.total, 11200);
 });
 
 test("parses machine-readable Kane output without trusting agent narration", () => {

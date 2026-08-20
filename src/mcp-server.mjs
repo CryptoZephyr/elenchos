@@ -84,6 +84,9 @@ export async function inspectRepository(root) {
       ready: kane.ready,
       source: kane.source,
       action: kane.action,
+      authentication: kane.identity?.status ?? "unknown",
+      credits: kane.balance?.available ?? null,
+      creditsStatus: kane.balance?.status ?? "unknown",
     },
     configPath: ".elenchos/config.json",
   };
