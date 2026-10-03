@@ -15,7 +15,7 @@ function saveTransition(run, persistence, next, detail) {
 }
 
 function kaneOutputPaths(testFile, root) {
-  const outputDirectory = join(realpathSync(dirname(testFile)), `output-${basename(testFile).replace(/_test\.md$/i, "")}`);
+  const outputDirectory = join(realpathSync.native(dirname(testFile)), `output-${basename(testFile).replace(/_test\.md$/i, "")}`);
   const path = relative(root, outputDirectory);
   if (!path || path.startsWith("..") || isAbsolute(path)) return [];
   return [path.split(sep).join("/")];
@@ -59,7 +59,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     throwIfCancelled();
     workspace = prepareWorkspace({ cwd, runId: run.id, mode });
     const executionCwd = workspace.cwd;
-    const stateOptions = { ignoredPaths: kaneOutputPaths(testFile, realpathSync(workspace.baseline.root)) };
+    const stateOptions = { ignoredPaths: kaneOutputPaths(testFile, realpathSync.native(workspace.baseline.root)) };
     run.repository = {
       kind: workspace.kind,
       workspace: executionCwd,

@@ -243,7 +243,7 @@ test("ignores Kane result output written next to the test during verify mode", a
         },
       },
     });
-    assert.equal(result.run.status, "VERIFIED");
+    assert.equal(result.run.status, "VERIFIED", result.run.error);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
