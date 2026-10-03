@@ -15,7 +15,7 @@ function saveTransition(run, persistence, next, detail) {
 }
 
 function kaneOutputPaths(testFile, root) {
-  const outputDirectory = join(dirname(testFile), `output-${basename(testFile).replace(/_test\.md$/i, "")}`);
+  const outputDirectory = join(realpathSync(dirname(testFile)), `output-${basename(testFile).replace(/_test\.md$/i, "")}`);
   const path = relative(root, outputDirectory);
   if (!path || path.startsWith("..") || isAbsolute(path)) return [];
   return [path.split(sep).join("/")];
