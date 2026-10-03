@@ -28,12 +28,16 @@ function fileMaterial(path) {
   return stat.isSymbolicLink() ? Buffer.from(`symlink:${readlinkSync(path)}`) : readFileSync(path);
 }
 
-export function captureRepositoryState(cwd) {
+function isIgnoredPath(path, ignoredPaths) {
+  return ignoredPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+export function captureRepositoryState(cwd, { ignoredPaths = [] } = {}) {
   const root = resolve(git(cwd, ["rev-parse", "--show-toplevel"]).stdout.trim());
   const head = git(root, ["rev-parse", "HEAD"]).stdout.trim();
   const treeHash = git(root, ["rev-parse", "HEAD^{tree}"]).stdout.trim();
   const status = git(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout;
-  const files = changedPaths(status);
+  const files = changedPaths(status).filter((path) => !isIgnoredPath(path, ignoredPaths));
   const diff = git(root, ["diff", "--binary", "HEAD"]).stdout;
   const material = [diff];
   for (const path of files) {

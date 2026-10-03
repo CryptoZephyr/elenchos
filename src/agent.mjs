@@ -118,7 +118,7 @@ export async function runAgent({ config, prompt, cwd, signal }) {
   });
   if (result.error) throw new Error(`Agent process could not start: ${result.error.message}`);
   if (result.cancelled) throw new Error("Agent run cancelled");
-  if (result.timedOut) throw new Error(`Agent timed out after ${config.timeoutMs ?? 120000}ms`);
+  if (result.timedOut) throw new Error(`Agent timed out after ${config.timeoutMs ?? 300000}ms`);
   if (result.exitCode !== 0) {
     const raw = result.stderr || result.stdout;
     if (isAuthenticationFailure(raw)) {

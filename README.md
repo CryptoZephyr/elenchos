@@ -312,7 +312,7 @@ init creates .elenchos/config.json. The repository includes a credential-free [c
       },
       "application": {
         "start": "npm run dev",
-        "url": "http://127.0.0.1:5173",
+        "url": "http://127.0.0.1:3000",
         "allowRemoteUrl": false,
         "readinessTimeoutMs": 60000,
         "env": {}
@@ -362,7 +362,7 @@ application.env is passed to the application process. Keep secrets in the local 
 ### Verification
 
 - command can point to a Kane executable or JavaScript entry file.
-- maxRepairAttempts is an integer from 0 through 10. The default is 2.
+- maxRepairAttempts is an integer from 0 through 10. init writes 2. If the field is missing, no repair attempts are made.
 - verifyBeforeImplement runs the baseline check before the implementation step.
 - retainWorkspace leaves the detached worktree in place for inspection.
 - timeoutSeconds is passed to Kane. The detected demo config uses 300 seconds.

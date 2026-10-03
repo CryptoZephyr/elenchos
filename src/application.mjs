@@ -68,6 +68,7 @@ async function waitForReady(url, timeoutMs, child, signal) {
   while (Date.now() < deadline) {
     if (signal?.aborted) throw new Error("Application startup cancelled");
     if (child.exitCode !== null) throw new Error(`Application exited with code ${child.exitCode}`);
+    if (child.signalCode !== null) throw new Error(`Application exited with signal ${child.signalCode}`);
     try {
       const response = await readinessFetch(url, deadline - Date.now(), signal);
       if (response.ok) return;

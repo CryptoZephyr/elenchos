@@ -1,5 +1,5 @@
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { startApplication } from "./application.mjs";
 import { buildImplementationPrompt, buildRepairPrompt, runAgent } from "./agent.mjs";
 import { assertVerificationContract, createVerificationContract } from "./contract.mjs";
@@ -12,6 +12,13 @@ import { captureRepositoryState, prepareWorkspace, removeWorkspace, sameReposito
 function saveTransition(run, persistence, next, detail) {
   transitionRun(run, next, detail);
   persistence.save(run);
+}
+
+function kaneOutputPaths(testFile, root) {
+  const outputDirectory = join(realpathSync.native(dirname(testFile)), `output-${basename(testFile).replace(/_test\.md$/i, "")}`);
+  const path = relative(root, outputDirectory);
+  if (!path || path.startsWith("..") || isAbsolute(path)) return [];
+  return [path.split(sep).join("/")];
 }
 
 function testPathFor(task, config, root) {
@@ -39,6 +46,10 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     if (signal?.aborted) throw new Error("Run cancelled");
   };
   try {
+    const maxRepairAttempts = Number(config.verification?.maxRepairAttempts ?? 0);
+    if (!Number.isInteger(maxRepairAttempts) || maxRepairAttempts < 0 || maxRepairAttempts > 10) {
+      throw new Error("verification.maxRepairAttempts must be an integer from 0 to 10");
+    }
     testFile = testPathFor(task, config, cwd);
     contract = createVerificationContract(task, testFile);
     run.verificationContract = testFile;
@@ -48,6 +59,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
     throwIfCancelled();
     workspace = prepareWorkspace({ cwd, runId: run.id, mode });
     const executionCwd = workspace.cwd;
+    const stateOptions = { ignoredPaths: kaneOutputPaths(testFile, realpathSync.native(workspace.baseline.root)) };
     run.repository = {
       kind: workspace.kind,
       workspace: executionCwd,
@@ -71,10 +83,6 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
       persistence.save(run);
     }
 
-    const maxRepairAttempts = Number(config.verification?.maxRepairAttempts ?? 0);
-    if (!Number.isInteger(maxRepairAttempts) || maxRepairAttempts < 0 || maxRepairAttempts > 10) {
-      throw new Error("verification.maxRepairAttempts must be an integer from 0 to 10");
-    }
     let repairAttempt = 0;
     while (true) {
       throwIfCancelled();
@@ -82,7 +90,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
       const attemptDirectory = join(persistence.directory, "attempts", String(attemptNumber).padStart(2, "0"));
       mkdirSync(attemptDirectory, { recursive: true });
       assertVerificationContract(contract, task);
-      const verificationRef = captureRepositoryState(executionCwd);
+      const verificationRef = captureRepositoryState(executionCwd, stateOptions);
       saveTransition(run, persistence, "STARTING_APP", `Start application for verification attempt ${run.attempts.length + 1}`);
       application = await applicationStarter({
         config: config.application ?? {},
@@ -102,7 +110,7 @@ export async function executeRun({ task, config, cwd, mode = "run", services = {
       });
       throwIfCancelled();
       assertVerificationContract(contract, task);
-      const verifiedRef = captureRepositoryState(executionCwd);
+      const verifiedRef = captureRepositoryState(executionCwd, stateOptions);
       if (!sameRepositoryState(verificationRef, verifiedRef)) {
         throw new Error("Repository changed while Kane was verifying it. The result was rejected.");
       }
