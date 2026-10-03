@@ -200,7 +200,7 @@ export function runCommand({ command, args = [], cwd, env, timeoutMs = 120000, i
 }
 
 export async function stopManagedProcess(managed) {
-  if (!managed?.child || managed.child.exitCode !== null) return;
+  if (!managed?.child || managed.child.exitCode !== null || managed.child.signalCode !== null) return;
   const child = managed.child;
   terminateProcessTree(child);
   await new Promise((resolve) => {

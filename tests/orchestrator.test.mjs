@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { executeRun } from "../src/orchestrator.mjs";
@@ -221,6 +221,55 @@ test("propagates cancellation from application startup and records a cancelled r
     assert.equal(result.run.status, "ERROR");
     assert.equal(result.run.cancelled, true);
     assert.match(result.run.error, /Run cancelled/);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("ignores Kane result output written next to the test during verify mode", async () => {
+  const fixture = repository();
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config({ maxRepairAttempts: 0 }),
+      cwd: fixture.root,
+      mode: "verify",
+      services: {
+        startApplication: async () => application(),
+        runKaneTest: async ({ cwd }) => {
+          mkdirSync(join(cwd, "output-proof"), { recursive: true });
+          writeFileSync(join(cwd, "output-proof", "Result.md"), "---\nstatus: passed\n---\n", "utf8");
+          return verification("PASS");
+        },
+      },
+    });
+    assert.equal(result.run.status, "VERIFIED");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("rejects an invalid repair limit before the implementation agent runs", async () => {
+  const fixture = repository();
+  let agentCalls = 0;
+  try {
+    const result = await executeRun({
+      task: fixture.task,
+      config: config({ maxRepairAttempts: 11, verifyBeforeImplement: false }),
+      cwd: fixture.root,
+      mode: "run",
+      services: {
+        startApplication: async () => application(),
+        runKaneTest: async () => verification("PASS"),
+        runAgent: async () => {
+          agentCalls += 1;
+          return { provider: "fake", exitCode: 0, stdout: "", stderr: "" };
+        },
+      },
+    });
+    assert.equal(result.run.status, "ERROR");
+    assert.match(result.run.error, /maxRepairAttempts/);
+    assert.equal(agentCalls, 0);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

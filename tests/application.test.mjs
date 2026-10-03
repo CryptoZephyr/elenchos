@@ -64,6 +64,19 @@ test("reports a process that exits before application readiness", async () => {
   }
 });
 
+test("reports a process killed by a signal before application readiness", { timeout: 4000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "elenchos-app-signal-"));
+  try {
+    await assert.rejects(() => startApplication({
+      config: { start: [process.execPath, "-e", "process.kill(process.pid, 'SIGTERM')"], url: "http://127.0.0.1:39998", readinessTimeoutMs: 10000 },
+      cwd: root,
+      logDirectory: join(root, "logs"),
+    }), process.platform === "win32" ? /Application exited/ : /Application exited with signal SIGTERM/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("enforces readiness timeout while an HTTP request is still pending", { timeout: 5000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "elenchos-app-stall-"));
   const stalledServer = createServer((_request, response) => {

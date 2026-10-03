@@ -24,6 +24,8 @@ Usage:
 `;
 }
 
+const booleanFlags = new Set(["force", "json", "strict"]);
+
 function parseFlags(values) {
   const positional = [];
   const flags = {};
@@ -35,6 +37,7 @@ function parseFlags(values) {
     }
     const [key, inline] = value.slice(2).split("=", 2);
     if (inline !== undefined) flags[key] = inline;
+    else if (booleanFlags.has(key)) flags[key] = true;
     else if (values[index + 1] && !values[index + 1].startsWith("--")) flags[key] = values[++index];
     else flags[key] = true;
   }
@@ -133,7 +136,11 @@ async function main() {
     const runId = positional[0];
     if (!runId) throw new Error("status requires a run id");
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(runId)) throw new Error("Invalid run id");
-    const path = repositoryPath(cwd, `.elenchos/runs/${runId}/run.json`);
+    const loadedConfig = existsSync(repositoryPath(cwd, flags.config ?? ".elenchos/config.json"))
+      ? loadConfig(cwd, flags.config)
+      : {};
+    const repositoryRoot = repositoryPath(cwd, loadedConfig.repository ?? ".");
+    const path = repositoryPath(repositoryRoot, `.elenchos/runs/${runId}/run.json`);
     if (!existsSync(path)) throw new Error(`Run not found: ${path}`);
     const run = readJson(path);
     printRunSummary(run, { json: Boolean(flags.json) });

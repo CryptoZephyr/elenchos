@@ -196,7 +196,8 @@ function runSnapshot(run) {
 
 function readRunSnapshot(root, runId) {
   const safeId = safeRunId(runId);
-  const path = repositoryPath(root, join(".elenchos", "runs", safeId, "run.json"));
+  const { repositoryRoot } = configForRepository(root, undefined, false);
+  const path = repositoryPath(repositoryRoot, join(".elenchos", "runs", safeId, "run.json"));
   if (!existsSync(path)) throw new Error(`Run not found: ${safeId}`);
   return runSnapshot(readJson(path));
 }
